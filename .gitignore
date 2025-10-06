@@ -34,6 +34,8 @@ datasets/
 *.numbers
 *.pages
 docs/
+.png
+graphs/
 
 # --- Python cache / bytecode ---
 __pycache__/
