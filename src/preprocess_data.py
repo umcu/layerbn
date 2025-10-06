@@ -39,6 +39,7 @@ from typing import Iterable, Mapping, Sequence
 import numpy as np
 import yaml
 import pandas as pd
+from pandas.api.types import CategoricalDtype
 import pyreadstat
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer
@@ -250,12 +251,32 @@ def score2(
 # ---------------------------------------------------------------------------
 
 
-def read_sav(path: Path) -> pd.DataFrame:
+def read_sav(path: Path) -> tuple[pd.DataFrame, object]:
     if not path.exists():
         raise FileNotFoundError(path)
-    frame, _meta = pyreadstat.read_sav(path)
-    return frame
+    return pyreadstat.read_sav(path)
 
+
+
+def apply_value_labels(df: pd.DataFrame, meta) -> pd.DataFrame:
+    """Replace numeric codes with SPSS value labels when available."""
+    if meta is None or not getattr(meta, "value_labels", None):
+        return df
+
+    result = df.copy()
+    value_sets = meta.value_labels
+    variable_map = getattr(meta, "variable_value_labels", {})
+
+    for column, label_set in variable_map.items():
+        if column not in result.columns:
+            continue
+        if isinstance(label_set, dict):
+            mapping = label_set
+        else:
+            mapping = value_sets.get(label_set, {})
+        if mapping:
+            result[column] = result[column].replace(mapping)
+    return result
 
 def coalesce(df: pd.DataFrame, cols: Sequence[str], target: str) -> None:
     """Replicate dplyr::coalesce behaviour across multiple columns."""
@@ -349,6 +370,9 @@ def build_outcomes(df_fu: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         },
         inplace=True,
     )
+    for col in ['T0_CDR', 'T2_CDR', 'T4_CDR']:
+        if col in outcomes:
+            outcomes[col] = pd.to_numeric(outcomes[col], errors='coerce')
     outcomes["T4_CDR"] = map_cdr_values(outcomes.get("T4_CDR", pd.Series(dtype=float, index=outcomes.index)))
     outcomes["T2_CDR"] = map_cdr_values(outcomes.get("T2_CDR", pd.Series(dtype=float, index=outcomes.index)))
 
@@ -464,8 +488,57 @@ def build_outcomes(df_fu: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     for phase in ("T2", "T4"):
         col = f"{phase}_reden_geen_deelname_E3_C11" if phase == "T2" else "T4_reden_geen_deelname_E4_C12"
         new_col = f"{phase}_dropout_reason"
-        outcomes[new_col] = outcomes[col].map(dropout_labels)
+        series = outcomes.get(col)
+        if series is None:
+            outcomes[new_col] = 'No dropout'
+            continue
+        if pd.api.types.is_numeric_dtype(series):
+            mapped = series.map(dropout_labels)
+        else:
+            mapped = series.replace(dropout_labels)
+        outcomes[new_col] = mapped.fillna(series)
         outcomes[new_col] = outcomes[new_col].fillna("No dropout")
+        def _translate_dropout(value):
+            if not isinstance(value, str):
+                return value
+            val = value.strip()
+            prefix_map = {
+                '0': 'Untraceable',
+                '1': 'Deceased',
+                '2': 'Too Ill',
+                '3': 'Moved to Nursing Home',
+                '4': 'Refusal',
+                '5': 'Other'
+            }
+            if len(val) and val[0] in prefix_map:
+                return prefix_map[val[0]]
+            replacements = {
+                'GEEN DROPOUT': 'No Dropout',
+                'Geen dropout': 'No Dropout',
+                'No dropout': 'No Dropout',
+                'No Dropout': 'No Dropout',
+                'Ontraceerbaar': 'Untraceable',
+                'Patiënt is overleden': 'Deceased',
+                'Patiënt is te ziek': 'Too Ill',
+                'Patiënt is opgenomen in een verzorgingshuis': 'Moved to Nursing Home',
+                'Deelnemer is overleden': 'Deceased',
+                'Deelnemer is te ziek': 'Too Ill',
+                'Deelnemer is opgenomen in een verzorgingshuis/verpleeghuis': 'Moved to Nursing Home',
+                'Deelnemer is opgenomen in een verzorgingshuis / verpleeghuis': 'Moved to Nursing Home',
+                'Deelnemer weigert': 'Refusal',
+                'Deelnemer, naaste en (huis)arts kunnen niet worden getraceerd': 'Untraceable',
+                'Deelnemer kan niet worden getraceerd': 'Untraceable',
+                'Patiënt kan niet worden getraceerd': 'Untraceable',
+                'Patiënt is opgenomen in een verzorgingshuis/verpleeghuis': 'Moved to Nursing Home',
+                'Patiënt weigert': 'Refusal',
+                'Anders, namelijk': 'Other',
+                'Anders': 'Other'
+            }
+            for key, val_out in replacements.items():
+                if val.startswith(key):
+                    return val_out
+            return val
+        outcomes[new_col] = outcomes[new_col].apply(_translate_dropout)
 
     outcomes["OUTCOME_CDR_INCREASE"] = np.where(
         (outcomes["T2_CDR"] > outcomes["T0_CDR"])
@@ -481,7 +554,14 @@ def build_outcomes(df_fu: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         outcomes["OUTCOME_CDR_INCREASE"].isna() & (outcomes["T4_CDR"] > outcomes["T0_CDR"]),
         "OUTCOME_CDR_INCREASE",
     ] = 1
-    outcomes["OUTCOME_CDR_INCREASE"] = outcomes["OUTCOME_CDR_INCREASE"].fillna(0)
+    # Convert outcomes into categorical labels with explicit Unobserved state
+    mask_mace_unobserved = (outcomes["OUTCOME_MACE"] == 0) & (outcomes["T4_dropout_reason"] != "No dropout")
+    outcomes.loc[mask_mace_unobserved, "OUTCOME_MACE"] = np.nan
+    outcomes["OUTCOME_MACE"] = outcomes["OUTCOME_MACE"].map({1: "Yes", 0: "No"}).fillna("Unobserved").astype("category")
+
+    mask_cdr_unobserved = outcomes["OUTCOME_CDR_INCREASE"].isna() | ((outcomes["OUTCOME_CDR_INCREASE"] == 0) & (outcomes["T4_dropout_reason"] != "No dropout"))
+    outcomes.loc[mask_cdr_unobserved, "OUTCOME_CDR_INCREASE"] = np.nan
+    outcomes["OUTCOME_CDR_INCREASE"] = outcomes["OUTCOME_CDR_INCREASE"].map({1: "Yes", 0: "No"}).fillna("Unobserved").astype("category")
 
     outcomes_sub = outcomes[["patientID", "T4_dropout_reason", "OUTCOME_MACE", "OUTCOME_CDR_INCREASE"]].copy()
 
@@ -490,6 +570,7 @@ def build_outcomes(df_fu: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def prepare_subset(df_fu: pd.DataFrame, bn_vars: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     bn_vars_filter = bn_vars.loc[bn_vars["LAYER"].notna(), ["LAYER", "VARIABLE NAME"]].copy()
+    bn_vars_filter.loc[bn_vars_filter["VARIABLE NAME"] == "DROPOUT REASON", "LAYER"] = "L9 – Dropout"
     extra_vars = [
         "patientID",
         "T0_patientengroep_E1_C1",
@@ -593,7 +674,9 @@ EXTRA_LAYER_ROWS = [
     ("L5 - Imaging markers of neurovascular damage", "TBV_ICV"),
     ("L4 – Potential disease process markers", "CBF"),
     ("L8 – Outcomes", "OUTCOME_CDR_INCREASE"),
-    ("L8 – Outcomes", "T4_DROPOUT_REASON"),
+    (
+        "L9 – Dropout", "DROPOUT REASON"
+    ),
     ("L8 – Outcomes", "OUTCOME_MACE"),
     ("L0 – Unmodifiable demographics", "AGE"),
     ("L0 – Unmodifiable demographics", "SEX"),
@@ -634,21 +717,42 @@ NAME_MAPPING = {
 
 
 LABEL_TRANSLATION: Mapping[str, Mapping[str, str]] = {
-    "STROKE HISTORY": {
-        "Ja, hersenbloeding": "Yes, hemorrhagic stroke",
-        "Ja, herseninfarct": "Yes, ischemic stroke",
-        "Ja, type onbekend": "Yes, type unknown",
-        "Nee": "No",
+    'STROKE HISTORY': {
+        'Ja, hersenbloeding': 'Yes, hemorrhagic stroke',
+        'Ja, herseninfarct': 'Yes, ischemic stroke',
+        'Ja, type onbekend': 'Yes, type unknown',
+        'Nee': 'No',
     },
-    "PATIENT GROUP": {
-        "Carotid occlusive disease": "Carotid occlusive disease",
-        "Controle": "Reference",
-        "Hartfalen": "Heart failure",
-        "Vascular cognitive impairment": "Vascular cognitive impairment",
+    'PATIENT GROUP': {
+        'Carotid occlusive disease': 'Carotid occlusive disease',
+        'Controle': 'Reference',
+        'Hartfalen': 'Heart failure',
+        'Vascular cognitive impairment': 'Vascular cognitive impairment',
     },
-    "ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY": {"0": "No", "1": "Yes"},
+    'ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY': {'0': 'No', '1': 'Yes'},
 }
 
+BASELINE_CDR_CATEGORIES = ['0', '0.5', '1', '1.5', '2', '3']
+
+def enforce_domain_categories(df: pd.DataFrame) -> None:
+    if 'BASELINE CDR' in df:
+        def _format_cdr(value):
+            if pd.isna(value):
+                return pd.NA
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return str(value)
+            mapping = {0.0: '0', 0.5: '0.5', 1.0: '1', 1.5: '1.5', 2.0: '2', 3.0: '3'}
+            return mapping.get(numeric, str(numeric))
+
+        formatted = df['BASELINE CDR'].apply(_format_cdr)
+        df['BASELINE CDR'] = pd.Categorical(formatted, categories=BASELINE_CDR_CATEGORIES, ordered=True)
+
+    for column in ['STROKE HISTORY', 'PATIENT GROUP', 'SEX']:
+        if column in df:
+            series = df[column].astype('string')
+            df[column] = pd.Categorical(series, ordered=False)
 
 def normalise_string_categories(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.select_dtypes(include="object"):
@@ -672,14 +776,31 @@ def impute_dataframe(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     if not numeric.empty:
         numeric = pd.DataFrame(imputer.fit_transform(numeric), columns=numeric.columns, index=df.index)
 
+    for col in other.columns:
+        series = other[col]
+        if series.isnull().any():
+            if pd.api.types.is_categorical_dtype(series):
+                modes = series.mode(dropna=True)
+                fill_value = modes.iloc[0] if not modes.empty else series.cat.categories[0]
+                if fill_value not in series.cat.categories:
+                    series = series.cat.add_categories([fill_value])
+                series = series.fillna(fill_value)
+            else:
+                modes = series.mode(dropna=True)
+                fill_value = modes.iloc[0] if not modes.empty else ""
+                series = series.fillna(fill_value)
+            other[col] = series
+
     combined = pd.concat([numeric, other], axis=1)
     return combined[df.columns]
 
 
 def preprocess(config: PreprocessConfig) -> None:
     LOGGER.info("Loading raw tables from %s", config.raw_dir)
-    df_bl = read_sav(config.raw_dir / "df.sav")
-    df_fu = read_sav(config.raw_dir / "fu_2.sav")
+    df_bl, meta_bl = read_sav(config.raw_dir / "df.sav")
+    df_bl = apply_value_labels(df_bl, meta_bl)
+    df_fu, meta_fu = read_sav(config.raw_dir / "fu_2.sav")
+    df_fu = apply_value_labels(df_fu, meta_fu)
     cs_1 = pd.read_excel(config.raw_dir / "compound_score.xlsx")
     cs_2 = pd.read_csv(config.raw_dir / "cs_cleaned_final.csv", sep=";", decimal=",")
 
@@ -692,13 +813,17 @@ def preprocess(config: PreprocessConfig) -> None:
     outcomes, outcomes_sub = build_outcomes(df_fu)
 
     bn_vars = pd.read_excel(config.codebook_path, sheet_name="Items")
+    bn_vars.loc[bn_vars["VARIABLE NAME"] == "DROPOUT REASON", "LAYER"] = "L9 – Dropout"
     subset, bn_vars_filter = prepare_subset(df_fu, bn_vars)
 
     df_final = subset.merge(outcomes_sub, how="left", on="patientID")
     harmonise_columns(df_final, bn_vars_filter)
 
     extra = pd.DataFrame(EXTRA_LAYER_ROWS, columns=["LAYER", "VARIABLE NAME"])
-    bn_vars_filter = pd.concat([bn_vars_filter, extra], ignore_index=True).drop_duplicates()
+    extra.loc[extra['VARIABLE NAME'] == 'DROPOUT REASON', 'LAYER'] = 'L9 – Dropout'
+    bn_vars_filter = pd.concat([bn_vars_filter, extra], ignore_index=True)
+    bn_vars_filter.loc[bn_vars_filter["VARIABLE NAME"] == "DROPOUT REASON", "LAYER"] = "L9 – Dropout"
+    bn_vars_filter = bn_vars_filter.drop_duplicates(subset=["VARIABLE NAME"])
 
     df_final = normalise_string_categories(df_final)
 
@@ -769,13 +894,19 @@ def preprocess(config: PreprocessConfig) -> None:
     df_clean_reduced = df_clean_score[[c for c in reduced_cols if c in df_clean_score]].copy()
 
     bn_vars_filter_2 = bn_vars_filter[bn_vars_filter["VARIABLE NAME"].isin(df_clean_reduced.columns)].copy()
+    bn_vars_filter_2.loc[bn_vars_filter_2["VARIABLE NAME"] == "DROPOUT REASON", "LAYER"] = "L9 – Dropout"
+    bn_vars_filter_2 = bn_vars_filter_2.drop_duplicates(subset=["VARIABLE NAME"])
+    bn_vars_filter_2.loc[bn_vars_filter_2["VARIABLE NAME"] == "DROPOUT REASON", "LAYER"] = "L9 – Dropout"
     df_clean_reduced.rename(columns=NAME_MAPPING, inplace=True)
     bn_vars_filter_2["VARIABLE NAME"] = bn_vars_filter_2["VARIABLE NAME"].replace(NAME_MAPPING)
+    bn_vars_filter_2.loc[bn_vars_filter_2["VARIABLE NAME"] == "DROPOUT REASON", "LAYER"] = "L9 – Dropout"
 
     df_clean_reduced = translate_labels(df_clean_reduced)
     df_clean_reduced = normalise_string_categories(df_clean_reduced)
+    enforce_domain_categories(df_clean_reduced)
 
     df_imp = impute_dataframe(df_clean_reduced, config.seed)
+    enforce_domain_categories(df_imp)
     if "ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY" in df_imp.columns:
         df_imp["ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY"] = df_imp["ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY"].astype(str)
 
