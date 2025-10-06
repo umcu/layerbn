@@ -1,0 +1,19 @@
+{
+  "unmapped_in_df": [],
+  "undefined_in_layers": [
+    "ascvd_hist",
+    "biomarker_score_1",
+    "biomarker_score_2",
+    "cdr_baseline",
+    "cerebral_blood_flow",
+    "cva_hist",
+    "dropout_reason",
+    "hipp_icv",
+    "mmse",
+    "patient_group",
+    "score2",
+    "starkstein",
+    "svd_score",
+    "tbv_icv"
+  ]
+}

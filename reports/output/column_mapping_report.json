@@ -1,0 +1,29 @@
+{
+  "matched": {
+    "age": "AGE",
+    "sex": "SEX",
+    "cdr_increase": "OUTCOME_CDR_INCREASE",
+    "mace": "OUTCOME_MACE",
+    "ptau181": "PTAU181",
+    "nfl": "NFL",
+    "gfap": "GFAP",
+    "ab40": "AB40",
+    "ab42": "AB42"
+  },
+  "missing": {
+    "score2": "VASCULAR RISK SCORE",
+    "svd_score": "SMALL VESSEL DISEASE SCORE",
+    "tbv_icv": "BRAIN/INTRACRANIAL VOLUME",
+    "hipp_icv": "HIPPOCAMPUS/INTRACRANIAL VOLUME",
+    "ascvd_hist": "ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY",
+    "cva_hist": "STROKE HISTORY",
+    "patient_group": "PATIENT GROUP",
+    "cdr_baseline": "BASELINE CDR",
+    "mmse": "MINI MENTAL STATE EXAMINATION",
+    "dropout_reason": "DROPOUT REASON",
+    "biomarker_score_1": "BIOMARKER SCORE 1",
+    "biomarker_score_2": "BIOMARKER SCORE 2",
+    "cerebral_blood_flow": "CEREBRAL BLOOD FLOW",
+    "starkstein": "STARKSTEIN SCORE"
+  }
+}
