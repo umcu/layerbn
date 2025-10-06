@@ -36,6 +36,7 @@ datasets/
 docs/
 .png
 graphs/
+out/
 
 # --- Python cache / bytecode ---
 __pycache__/

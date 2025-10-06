@@ -329,11 +329,15 @@ def build_outcomes(df_fu: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         "T4_1_datum_overlijden_E4_C12",
         "T4_1_oorzaak_overlijden_E4_C12",
     ]
-    missing_cols = [c for c in outcome_cols if c not in df_fu]
-    if missing_cols:
-        raise KeyError(f"Outcome columns missing from fu dataset: {missing_cols}")
+    essential_cols = {"patientID", "T0_CDR_E1_C1", "T2_CDR_E3_C10", "T4_CDR_E4_C12"}
+    missing_essential = [c for c in essential_cols if c not in df_fu]
+    if missing_essential:
+        raise KeyError(f"Essential outcome columns missing from fu dataset: {missing_essential}")
+    missing_optional = [c for c in outcome_cols if c not in df_fu]
+    if missing_optional:
+        LOGGER.warning("Outcome columns missing from fu dataset and will be filled with NaN: %s", missing_optional)
 
-    outcomes = df_fu[outcome_cols].copy()
+    outcomes = df_fu.reindex(columns=outcome_cols)
     date_cols = [c for c in outcomes.columns if "datum" in c.lower()]
     to_datetime(outcomes, date_cols)
 
@@ -345,8 +349,8 @@ def build_outcomes(df_fu: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         },
         inplace=True,
     )
-    outcomes["T4_CDR"] = map_cdr_values(outcomes.setdefault("T4_CDR", pd.Series(dtype=float)))
-    outcomes["T2_CDR"] = map_cdr_values(outcomes.setdefault("T2_CDR", pd.Series(dtype=float)))
+    outcomes["T4_CDR"] = map_cdr_values(outcomes.get("T4_CDR", pd.Series(dtype=float, index=outcomes.index)))
+    outcomes["T2_CDR"] = map_cdr_values(outcomes.get("T2_CDR", pd.Series(dtype=float, index=outcomes.index)))
 
     # Coalesce duplicated follow-up columns
     coalesce(outcomes, ["T2_CVA_E3_C10", "T2_CVA_E3_C11"], "T2_CVA")
@@ -662,18 +666,14 @@ def translate_labels(df: pd.DataFrame) -> pd.DataFrame:
 
 def impute_dataframe(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     numeric = df.select_dtypes(include=["number"]).copy()
-    categorical = df.select_dtypes(exclude=["number"]).copy()
+    other = df.select_dtypes(exclude=["number"]).copy()
 
     imputer = IterativeImputer(random_state=seed, sample_posterior=False)
     if not numeric.empty:
-        imputed_numeric = pd.DataFrame(imputer.fit_transform(numeric), columns=numeric.columns, index=df.index)
-        numeric = imputed_numeric
+        numeric = pd.DataFrame(imputer.fit_transform(numeric), columns=numeric.columns, index=df.index)
 
-    for col in categorical:
-        categorical[col] = categorical[col].fillna("Unobserved")
-
-    combined = pd.concat([numeric, categorical], axis=1)[df.columns]
-    return combined
+    combined = pd.concat([numeric, other], axis=1)
+    return combined[df.columns]
 
 
 def preprocess(config: PreprocessConfig) -> None:
@@ -776,7 +776,7 @@ def preprocess(config: PreprocessConfig) -> None:
     df_clean_reduced = normalise_string_categories(df_clean_reduced)
 
     df_imp = impute_dataframe(df_clean_reduced, config.seed)
-    if "ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY" in df_imp:
+    if "ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY" in df_imp.columns:
         df_imp["ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY"] = df_imp["ATHEROSCLEROTIC CARDIOVASCULAR DISEASE HISTORY"].astype(str)
 
     output_dir = config.output_dir
