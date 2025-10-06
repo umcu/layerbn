@@ -1,0 +1,7 @@
+# Copy this file to data_paths.yml and fill in the absolute paths.
+# This keeps sensitive/raw data locations outside the repository.
+
+risk_region: Low
+raw_dir: /ABSOLUTE/PATH/TO/raw
+codebook_path: /ABSOLUTE/PATH/TO/meta/HBC_CODEBOOK_LABELS.xlsx
+output_dir: /ABSOLUTE/PATH/TO/project/data

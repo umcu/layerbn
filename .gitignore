@@ -19,6 +19,7 @@ datasets/
 *.mat
 *.npy
 *.npz
+*.RDS
 
 # --- Manuscripts / Documents (not tracked) ---
 *.doc
@@ -111,3 +112,4 @@ Thumbs.db
 # --- Docs build outputs ---
 docs/_build/
 site/
+config/data_paths.yml
