@@ -1,3 +1,5 @@
+![VCI-Bayes Logo](logo-vci-bayes.png)
+
 # VCI-Bayes-Explore
 
 ## Data setup
@@ -11,7 +13,7 @@ Required Python packages: pandas, numpy, pyreadstat, scikit-learn, PyYAML.
 
 ## Overview
 
-This repository contains the analysis pipeline for the HART-BREIN Bayesian network exploration. The workflow builds a Bayesian network from clinical, imaging, and biomarker data to evaluate outcome trajectories and layer-wise dependencies.
+This repository contains the analysis pipeline for the VCI Bayesian network exploration. The workflow builds a Bayesian network from clinical, imaging, and biomarker data to evaluate outcome trajectories and layer-wise dependencies.
 
 The project consists of:
 - `src/preprocess_data.py`: Python port of the original R preprocessing pipeline, producing the parquet datasets consumed by the notebook.
