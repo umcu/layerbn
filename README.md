@@ -7,9 +7,15 @@ A reproducible pipeline for the Heart-Brain Connection Bayesian Network project.
 
 The accompanying manuscript is currently in preparation 📄
 
+## License & Citation
+
+This repository is released under the [MIT License](LICENSE).
+
+If you use this code, please cite: [![DOI](https://zenodo.org/badge/1067978388.svg)](https://doi.org/10.5281/zenodo.17302710). Thanks!
+
 ---
 
-> ⚠️ **Important:** This pipeline is tailored to the Heart-Brain Connection cohort and its definitions. If you apply it to a different dataset, review and adapt both the preprocessing (`src/preprocess_data.py`) and the Bayesian-network notebook (`src/bayesian_network.ipynb`) so the logic matches your cohort’s structure, coding, and requirements.
+> ⚠️ **Important:** This code is tailored to the Heart-Brain Connection cohort and its definitions. If you apply it to a different dataset, review and adapt both the preprocessing (`src/preprocess_data.py`) and the Bayesian-network notebook (`src/bayesian_network.ipynb`) so the logic matches your cohort’s structure, coding, and requirements.
 
 ## Quick start
 
@@ -133,5 +139,4 @@ The script:
 - ipywidgets
 
 Install manually (`pip install …`) or via a requirements file if you maintain one.
-
 
