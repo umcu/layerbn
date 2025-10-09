@@ -116,7 +116,7 @@ The script:
 
 ---
 
-## How the pipeline works (for the technically curious)
+## How the pipeline works
 
 * **Value labels**: SPSS value labels are applied before any logic runs; Dutch strings such as `"Ja, Herseninfarct"` become `"Yes, ischemic stroke"`.
 * **Outcome definitions**:
