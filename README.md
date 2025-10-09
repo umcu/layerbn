@@ -3,7 +3,7 @@
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-A reproducible pipeline for the Heart-Brain Connection Bayesian Network project. For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/. 
+Reproducible scripts for the Heart-Brain Connection Bayesian Network project by [Malin Overmars, PhD](https://github.com/loverma2). For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/. 
 
 The accompanying manuscript is currently in preparation 📄
 
