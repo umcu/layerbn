@@ -113,19 +113,6 @@ The script:
 │   └── out/                  Default location for processed parquet files
 └── docs/, graphs/, cache/, … Supporting material
 ```
-
----
-
-## How the pipeline works
-
-* **Value labels**: SPSS value labels are applied before any logic runs; Dutch strings such as `"Ja, Herseninfarct"` become `"Yes, ischemic stroke"`.
-* **Outcome definitions**:
-  - `OUTCOME_MACE` is “Yes” if **either** T2 or T4 indicates a stroke/cardiac event or the recorded cause of death mentions key terms (myocardial infarction, cerebral hemorrhage, etc.).
-  - `OUTCOME_CDR_INCREASE` is “Yes” if the CDR score increases at T2 or T4 **or** the participant leaves follow-up with the reason (“Moved to Nursing Home”). Dropouts without recorded events are labelled “Unobserved”.
-* **Layer metadata**: `bn_vars.parquet` strips whitespace and normalises the layer names (for consistent colouring in the notebook plots).
-* **Risk score**: SCORE2 is calculated via a Python translation of the `RiskScorescvd::SCORE2` function.
-* **Imputation**: Numeric features use `IterativeImputer` (sklearn). Categorical variables retain the translated labels.
-
 ---
 
 ## Requirements
