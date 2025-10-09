@@ -3,7 +3,9 @@
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-Reproducible scripts for the Heart-Brain Connection Bayesian Network project by [Malin Overmars, PhD](https://github.com/loverma2). For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/. 
+Reproducible scripts for the Heart-Brain Connection Bayesian Network project by [Malin Overmars, PhD](https://github.com/loverma2) - [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/). 
+
+For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/ 🫀🧠. 
 
 The accompanying manuscript is currently in preparation 📄
 
