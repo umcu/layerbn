@@ -3,17 +3,25 @@
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-Reproducible scripts for the Heart-Brain Connection Bayesian Network project by [Malin Overmars, PhD](https://github.com/loverma2) - [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/). 
+**VCI-Bayes-Explore** packages the preprocessing and modelling workflow behind the Heart-Brain Connection Bayesian Network analysis led by [Malin Overmars, PhD](https://github.com/loverma2) within the [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/) of the UMC Utrecht. It turns raw data into a preprocessed dataset and reproduces the layered Bayesian network—demographics → vascular risk → neuroimaging → function → outcomes—that learns dependencies among 566 participants (median age 68) spanning VCI, heart failure, carotid occlusive disease, and a reference group. The pipeline quantifies conditional probabilities for cognitive decline and major adverse cardiovasuclar events (MACE), benchmarks emerging biomarkers via mutual-information analyses, and supports patient-level inference while explicitly modelling dropout effects observed in the cohort.
 
-For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/ 🫀🧠. 
+Use this repository to:
+- Keep sensitive file locations outside version control while configuring project-wide paths;
+- Run the preprocessing pipeline that labels, engineers, and imputes cohort variables;
+- Learn, constrain, and visualise the Bayesian network inside a ready-to-run notebook;
+- Inspect the generated parquet outputs, figures, and companion documentation.
 
-The accompanying manuscript is currently in preparation 📄
+The layout is designed so collaborators, reviewers, and future cohort expansions can retrace each analysis step while still allowing adaptations for new datasets.
+
+For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/. This work is supported by the [Dutch Heart Foundation](https://www.hartstichting.nl).
+
+The accompanying manuscript is currently in preparation 📄.
 
 ## License & Citation
 
 This repository is released under the [MIT License](LICENSE).
 
-If you use this code, please cite: [![DOI](https://zenodo.org/badge/1067978388.svg)](https://doi.org/10.5281/zenodo.17302710). Thanks!
+If you use this code, please cite: [![DOI](https://zenodo.org/badge/1067978388.svg)] (https://doi.org/10.5281/zenodo.17302710). Thanks!
 
 ---
 
@@ -113,6 +121,19 @@ The script:
 │   └── out/                  Default location for processed parquet files
 └── docs/, graphs/, cache/, … Supporting material
 ```
+
+---
+
+## How the pipeline works (for the technically curious)
+
+* **Value labels**: SPSS value labels are applied before any logic runs; Dutch strings such as `"Ja, Herseninfarct"` become `"Yes, ischemic stroke"`.
+* **Outcome definitions**:
+  - `OUTCOME_MACE` is “Yes” if **either** T2 or T4 indicates a stroke/cardiac event or the recorded cause of death mentions key terms (myocardial infarction, cerebral hemorrhage, etc.).
+  - `OUTCOME_CDR_INCREASE` is “Yes” if the CDR score increases at T2 or T4 **or** the participant leaves follow-up with the reason (“Moved to Nursing Home”). Dropouts without recorded events are labelled “Unobserved”.
+* **Layer metadata**: `bn_vars.parquet` strips whitespace and normalises the layer names (for consistent colouring in the notebook plots).
+* **Risk score**: SCORE2 is calculated via a Python translation of the `RiskScorescvd::SCORE2` function.
+* **Imputation**: Numeric features use `IterativeImputer` (sklearn). Categorical variables retain the translated labels.
+
 ---
 
 ## Requirements
