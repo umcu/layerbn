@@ -3,7 +3,11 @@
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-**VCI-Bayes-Explore** packages the preprocessing and modelling workflow behind the Heart-Brain Connection Bayesian Network analysis led by [Malin Overmars, PhD](https://github.com/loverma2) within the [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/) of the UMC Utrecht. It turns raw data into a preprocessed dataset and reproduces the layered Bayesian network—demographics → vascular risk → neuroimaging → function → outcomes—that learns dependencies among 566 participants (median age 68) spanning VCI, heart failure, carotid occlusive disease, and a reference group. The pipeline quantifies conditional probabilities for cognitive decline and major adverse cardiovasuclar events (MACE), benchmarks emerging biomarkers via mutual-information analyses, and supports patient-level inference while explicitly modelling dropout effects observed in the cohort.
+**VCI-Bayes-Explore** packages the preprocessing and modelling workflow behind the Heart-Brain Connection Bayesian Network analysis led by [Malin Overmars, PhD](https://github.com/loverma2) within the [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/) of the UMC Utrecht. 
+
+It turns raw data into a preprocessed dataset and reproduces a clinically informed, layered Bayesian network—**demographics → vascular risk → neuroimaging → function → outcomes**—that learns dependencies among 566 participants of the Heart-Brain Connection study.
+
+The pipeline quantifies conditional probabilities for outcomes cognitive decline and major adverse cardiovasuclar events (MACE), benchmarks emerging biomarkers via mutual-information analyses, and supports patient-level inference while explicitly modelling dropout effects observed in the cohort.
 
 Use this repository to:
 - Keep sensitive file locations outside version control while configuring project-wide paths;
