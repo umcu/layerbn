@@ -116,3 +116,4 @@ Thumbs.db
 docs/_build/
 site/
 config/data_paths.yml
+.env
