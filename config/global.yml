@@ -1,0 +1,24 @@
+version: "0.10.3"
+data_loading: false
+data_loading_header: true
+data_ignore: []
+cache_loading: false
+recursive_loading: false
+munging: true
+logging: false
+logging_level: INFO
+load_libraries: false
+libraries:
+  - reshape2
+  - plyr
+  - tidyverse
+  - stringr
+  - lubridate
+  - haven
+as_factors: false
+tables_type: tibble
+attach_internal_libraries: false
+cache_loaded_data: true
+sticky_variables: NONE
+underscore_variables: true
+cache_file_format: RData

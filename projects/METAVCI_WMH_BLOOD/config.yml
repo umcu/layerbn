@@ -1,0 +1,4 @@
+# Project-specific settings for METAVCI_WMH_BLOOD.
+#
+# Copy or adapt the keys from `config/global.yml` and `projects/HBC/config.yml`
+# to match the METAVCI_WMH_BLOOD dataset (paths, SCORE2 region, etc.).

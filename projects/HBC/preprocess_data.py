@@ -4,11 +4,11 @@
 This script loads the raw HART-BREIN data, engineers the clinical outcomes,
 creates the metadata table that enforces the expert-defined layers, and writes
 the `df.parquet`, `df_imp.parquet`, and `bn_vars.parquet` artefacts consumed by
-`src/bayesian_network.ipynb`.
+`projects/HBC/01_bayesian_network.ipynb`.
 
 Usage
 -----
-python src/preprocess_data.py --project-root /path/to/project --risk-region Low
+python projects/HBC/preprocess_data.py --project-root /path/to/project --risk-region Low
 
 The defaults assume the following layout relative to the project root::
 
@@ -842,6 +842,181 @@ def impute_dataframe(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     return combined[df.columns]
 
 
+BASELINE_GROUP_ORDER = [
+    "Carotid occlusive disease",
+    "Heart failure",
+    "Vascular cognitive impairment",
+    "Reference",
+]
+
+DIABETES_CATEGORY_LABELS = [
+    ("Yes, with lifestyle advice", ["yes, with lifestyle advice", "ja, met leefstijladvies", "ja, met leefstijl advies"]),
+    ("Yes, with oral antidiabetics", ["yes, with oral antidiabetics", "ja, met orale antidiabetica", "ja, met orale antidiabetics"]),
+    ("Yes, with insulin", ["yes, with insulin", "ja, met insuline"]),
+    ("No", ["no", "nee", "geen diabetes"]),
+]
+
+SMOKING_CATEGORY_LABELS = [
+    ("Yes", ["yes", "ja", "smoker", "current smoker"]),
+    ("No", ["no", "nee", "never", "nooit gerookt", "never smoked"]),
+    ("Not anymore", ["not anymore", "niet meer", "gestopt", "gestopt met roken", "ex-roker", "ex roker", "ex-smoker", "former smoker", "quit"]),
+]
+
+CVA_CATEGORY_LABELS = [
+    ("Yes, hemorrhage", ["yes, hemorrhage", "yes, haemorrhage", "yes, hemorrhagic stroke"]),
+    ("Yes, stroke", ["yes, stroke", "yes, ischemic stroke"]),
+    ("Yes, type unknown", ["yes, type unknown"]),
+    ("No", ["no"]),
+]
+
+PATIENT_GROUP_CATEGORY_LABELS = [
+    ("Carotid occlusive disease", ["carotid occlusive disease"]),
+    ("Heart failure", ["heart failure"]),
+    ("Vascular cognitive impairment", ["vascular cognitive impairment"]),
+    ("Reference", ["reference", "controle"]),
+]
+
+
+def _normalize_label(value: str | float | int | None) -> str | None:
+    if value is None or (isinstance(value, str) and value.strip() == ""):
+        return None
+    if isinstance(value, (float, int)) and pd.isna(value):
+        return None
+    return str(value).strip().casefold()
+
+
+def _format_median_iqr(series: pd.Series | None) -> str:
+    if series is None:
+        return "NA"
+    numeric = pd.to_numeric(series, errors="coerce").dropna()
+    if numeric.empty:
+        return "NA"
+    q1 = numeric.quantile(0.25)
+    median = numeric.median()
+    q3 = numeric.quantile(0.75)
+    return f"{median:.2f} [{q1:.2f}, {q3:.2f}]"
+
+
+def _format_count_pct(series: pd.Series | None, targets: Sequence[str]) -> str:
+    if series is None:
+        return "NA"
+    valid = pd.Series(series).dropna()
+    if valid.empty:
+        return "NA"
+    normalized = valid.apply(_normalize_label).dropna()
+    if normalized.empty:
+        return "NA"
+    target_norms = {_normalize_label(value) for value in targets if value is not None}
+    if not target_norms:
+        return "NA"
+    count = normalized.isin(target_norms).sum()
+    pct = (count / len(normalized)) * 100
+    return f"{int(count)} ({pct:.1f})"
+
+
+def _build_group_sequence(df: pd.DataFrame, group_col: str) -> list[tuple[str, pd.DataFrame]]:
+    groups: list[tuple[str, pd.DataFrame]] = [("Overall", df)]
+    if group_col not in df:
+        LOGGER.warning("Baseline table: column %s is missing", group_col)
+        return groups
+    present_values = df[group_col].dropna()
+    added: set[str] = set()
+    for label in BASELINE_GROUP_ORDER:
+        mask = present_values == label
+        if mask.any():
+            groups.append((label, df[df[group_col] == label]))
+            added.add(label)
+    for value in present_values.unique():
+        if value in added:
+            continue
+        groups.append((value, df[df[group_col] == value]))
+        added.add(value)
+    return groups
+
+
+def _add_category_rows(
+    rows: list[dict[str, str]],
+    groups: list[tuple[str, pd.DataFrame]],
+    metric_label: str,
+    column: str,
+    categories: Sequence[tuple[str, Sequence[str]]],
+) -> None:
+    for display_label, target_values in categories:
+        row = {"Metric": metric_label, "Submetric": display_label}
+        for group_name, group_df in groups:
+            row[group_name] = _format_count_pct(group_df.get(column), target_values)
+        rows.append(row)
+
+
+def build_baseline_table_by_group(df: pd.DataFrame) -> pd.DataFrame:
+    """Return baseline characteristics table per patient group."""
+    working = df.copy()
+    working.rename(columns=NAME_MAPPING, inplace=True)
+    working = normalise_string_categories(working)
+    working = translate_labels(working)
+
+    group_col = "PATIENT GROUP" if "PATIENT GROUP" in working else "PATIENTENGROEP"
+    groups = _build_group_sequence(working, group_col)
+    rows: list[dict[str, str]] = []
+
+    def add_simple_row(metric: str, func, submetric: str = "") -> None:
+        row = {"Metric": metric, "Submetric": submetric}
+        for group_name, group_df in groups:
+            row[group_name] = func(group_df)
+        rows.append(row)
+
+    add_simple_row("n", lambda gdf: f"{len(gdf)}")
+    add_simple_row("Age (median [IQR])", lambda gdf: _format_median_iqr(gdf.get("AGE")))
+    add_simple_row(
+        "Male sex (%)",
+        lambda gdf: _format_count_pct(gdf.get("SEX"), ["male", "man", "m"]),
+    )
+
+    _add_category_rows(rows, groups, "Diabetes (%)", "DIABETES", DIABETES_CATEGORY_LABELS)
+    _add_category_rows(rows, groups, "Smoking (%)", "ROKEN", SMOKING_CATEGORY_LABELS)
+
+    add_simple_row(
+        "Systolic blood pressure (median [IQR])",
+        lambda gdf: _format_median_iqr(gdf.get("SYS_BP")),
+    )
+    add_simple_row(
+        "Low-density lipoprotein cholesterol (median [IQR])",
+        lambda gdf: _format_median_iqr(gdf.get("CHOLESTEROL_LDL")),
+    )
+    add_simple_row(
+        "Systematic Coronary Risk Evaluation score (median [IQR])",
+        lambda gdf: _format_median_iqr(gdf.get("SCORE_2")),
+    )
+    add_simple_row(
+        "Blood pressure medication = No (%)",
+        lambda gdf: _format_count_pct(gdf.get("BLOEDDRUK_MEDICATIE"), ["no", "nee", "0"]),
+    )
+    add_simple_row(
+        "Transient Ischaemic Attack = No (%)",
+        lambda gdf: _format_count_pct(gdf.get("TIA"), ["no", "nee", "0"]),
+    )
+
+    _add_category_rows(
+        rows,
+        groups,
+        "Cerebrovascular Accident (%)",
+        "STROKE HISTORY",
+        CVA_CATEGORY_LABELS,
+    )
+    _add_category_rows(
+        rows,
+        groups,
+        "Patient group (%)",
+        group_col,
+        PATIENT_GROUP_CATEGORY_LABELS,
+    )
+
+    table = pd.DataFrame(rows)
+    group_names = [name for name, _ in groups]
+    ordered_cols = ["Metric", "Submetric"] + group_names
+    return table.loc[:, ordered_cols]
+
+
 def preprocess(config: PreprocessConfig) -> None:
     LOGGER.info("Loading raw tables from %s", config.raw_dir)
     df_bl, meta_bl = read_sav(config.raw_dir / "df.sav")
@@ -963,6 +1138,16 @@ def preprocess(config: PreprocessConfig) -> None:
     df_clean_reduced.to_parquet(output_dir / 'df.parquet', index=False)
     df_imp.to_parquet(output_dir / 'df_imp.parquet', index=False)
     bn_vars_filter_2.to_parquet(output_dir / 'bn_vars.parquet', index=False)
+
+    baseline_table = build_baseline_table_by_group(df_clean_score)
+    if not baseline_table.empty:
+        baseline_csv = output_dir / "baseline_table_by_group.csv"
+        baseline_parquet = output_dir / "baseline_table_by_group.parquet"
+        baseline_table.to_csv(baseline_csv, index=False)
+        baseline_table.to_parquet(baseline_parquet, index=False)
+        LOGGER.info("Wrote baseline table (%s rows) to %s", len(baseline_table), baseline_csv)
+    else:
+        LOGGER.warning("Baseline table is empty; skipping export.")
 
     LOGGER.info("Wrote df.parquet (%s rows)", len(df_clean_reduced))
     LOGGER.info("Wrote df_imp.parquet (%s rows)", len(df_imp))
