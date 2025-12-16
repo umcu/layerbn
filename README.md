@@ -1,7 +1,7 @@
 
 # VCI-Bayes-Explore
 
-![VCI-Bayes Logo](docs/figures/logo-vci-bayes.png)
+![VCI-Bayes Logo](logo-vci-bayes.png)
 
 **VCI-Bayes-Explore** packages the preprocessing and modelling workflow behind the Heart-Brain Connection Bayesian Network analysis led by [Malin Overmars, PhD](https://github.com/loverma2) within the [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/) of the UMC Utrecht. 
 
@@ -25,7 +25,7 @@ The accompanying manuscript is currently in preparation 📄.
 
 This repository is released under the [MIT License](LICENSE).
 
-If you use this code, please cite: [![DOI](https://zenodo.org/badge/1067978388.svg)] (https://doi.org/10.5281/zenodo.17302710). Thanks!
+If you use this code, please cite: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)] (https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg). Thanks!
 
 ---
 
