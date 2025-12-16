@@ -25,7 +25,8 @@ The accompanying manuscript is currently in preparation 📄.
 
 This repository is released under the [MIT License](LICENSE).
 
-If you use this code, please cite: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)](https://doi.org/10.5281/zenodo.17305046). Thanks!
+If you use this code, please cite:  
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)](https://doi.org/10.5281/zenodo.17305046)
 
 ---
 
