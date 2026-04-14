@@ -1,5 +1,6 @@
 risk_region: Low
-raw_dir: /Volumes/GROUPS/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT/data
-output_dir: /Volumes/GROUPS/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT/output
-codebook_path: /Volumes/GROUPS/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT/data/HBC_CODEBOOK_LABELS.xlsx
+project_root: '/Users/loverma2/Networkshares/Groups/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT'
+raw_dir: '/Users/loverma2/Networkshares/Groups/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT/data'
+output_dir: '/Users/loverma2/Networkshares/Groups/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT/output'
+codebook_path: '/Users/loverma2/Networkshares/Groups/HER/Onderzoek/Neurologie/VCI onderzoek/Malin Overmars/01_HARTBREIN/04_BAYESIAN_OUTPUT/data/HBC_CODEBOOK_LABELS.xlsx'
 
