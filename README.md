@@ -3,161 +3,168 @@
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-**VCI-Bayes-Explore** packages the preprocessing and modelling workflow behind the Heart-Brain Connection Bayesian Network analysis led by [Malin Overmars, PhD](https://github.com/loverma2) within the [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/) of the UMC Utrecht. 
+**VCI-Bayes-Explore** packages the preprocessing and modelling workflow
+behind Bayesian-network analyses in the [Vascular Cognitive Impairment
+(VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
+of the UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
 
-It turns raw data into a preprocessed dataset and reproduces a clinically informed, layered Bayesian network—**demographics → vascular risk → neuroimaging → function → outcomes**—that learns dependencies among 566 participants of the Heart-Brain Connection study.
+The flagship analysis (`projects/HBC/`) turns raw Heart-Brain Connection
+cohort data into a clinically-informed, layered Bayesian network —
+**demographics → vascular risk → neuroimaging → function → outcomes** —
+that learns dependencies among 566 participants, quantifies conditional
+probabilities for cognitive decline and MACE, benchmarks emerging
+biomarkers via mutual information, and explicitly models dropout.
 
-The pipeline quantifies conditional probabilities for outcomes cognitive decline and major adverse cardiovasuclar events (MACE), benchmarks emerging biomarkers via mutual-information analyses, and supports patient-level inference while explicitly modelling dropout effects observed in the cohort.
+Additional subprojects apply the same shared pipeline (`core/`) to
+different research questions across the METAVCI cohorts.
 
-Use this repository to:
-- Keep sensitive file locations outside version control while configuring project-wide paths;
-- Run the preprocessing pipeline that labels, engineers, and imputes cohort variables;
-- Learn, constrain, and visualise the Bayesian network inside a ready-to-run notebook;
-- Inspect the generated parquet outputs, figures, and companion documentation.
-
-The layout is designed so collaborators, reviewers, and future cohort expansions can retrace each analysis step while still allowing adaptations for new datasets.
-
-For more information about the Heart-Brain Connection study, check: https://hart-brein.nl/. This work is supported by the [Dutch Heart Foundation](https://www.hartstichting.nl).
-
-The accompanying manuscript is currently in preparation 📄.
+For more on the Heart-Brain Connection study: https://hart-brein.nl/
+(supported by the [Dutch Heart Foundation](https://www.hartstichting.nl)).
+The accompanying manuscript for the HBC analysis is currently in
+preparation 📄.
 
 ## License & Citation
 
-This repository is released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE).
 
-If you use this code, please cite:  
+If you use this code, please cite:
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)](https://doi.org/10.5281/zenodo.17305046)
 
 ---
 
-> ⚠️ **Important:** This code is tailored to the Heart-Brain Connection cohort and its definitions. If you apply it to a different dataset, review and adapt both the preprocessing notebook (`projects/HBC/00_preprocess.ipynb`) and the Bayesian-network notebook (`projects/HBC/01_bayesian_network.ipynb`) so the logic matches your cohort’s structure, coding, and requirements.
-
-## Quick start
-
-1. **Install Python 3.13+** (e.g. from [python.org](https://www.python.org/downloads/)) and open a terminal in the project folder.
-2. **Create a virtual environment (optional but recommended):**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate # Windows: venv\Scripts\activate
-   pip install pandas numpy pyreadstat scikit-learn PyYAML pyagrum matplotlib scipy ipywidgets
-   ```
-3. **Tell the pipeline where your raw data live:**
-   ```bash
-   cp config/data_paths.example.yml config/data_paths.yml
-   ```
-   Edit `config/data_paths.yml` and fill in:
-   - `raw_dir`: folder with the SPSS `.sav` files
-   - `codebook_path`: path to `HBC_CODEBOOK_LABELS.xlsx`
-   - `output_dir`: point to a project-local folder such as `data/` to keep processed data alongside the notebooks
-4. **Preprocess the data:** launch Jupyter (or VS Code/JupyterLab), open `projects/HBC/00_preprocess.ipynb`, update the config cell to point to your data, and run all cells. The processed files (`df.parquet`, `df_imp.parquet`, `bn_vars.parquet`) appear in your chosen `output_dir` (e.g., `data/`).
-5. **Run the analysis notebook:** open `projects/HBC/01_bayesian_network.ipynb`. The first configuration cell automatically reads the parquet files from your `output_dir`. Click “Run All” to reproduce the figures.
-
-That’s it—you now have the same dataset and model that produced the manuscript figures.  Need more control? Jump to the sections below.
-
----
-
-## Data preparation in detail
-
-### 1. Configure file locations
-
-`config/data_paths.yml` keeps sensitive paths out of version control (the file is git-ignored). It accepts the following keys:
-
-| Key | Description |
-| --- | --- |
-| `raw_dir` | Folder containing the raw SPSS exports (`df.sav`, `fu_2.sav`, etc.). |
-| `codebook_path` | Absolute path to `HBC_CODEBOOK_LABELS.xlsx`. |
-| `output_dir` | Where processed parquet files are written (e.g., `data/`). |
-| `risk_region` | SCORE2 region used for cardiovascular risk (defaults to `"Low"`). |
-
-All paths may be relative to the repository root. Example:
-
-```yaml
-risk_region: Low
-raw_dir: "/secure/location/hartbrein/raw"
-codebook_path: "/secure/location/hartbrein/meta/HBC_CODEBOOK_LABELS.xlsx"
-output_dir: "data"
-```
-
-### 2. Run the preprocessing notebook
-
-Open `projects/HBC/00_preprocess.ipynb` in Jupyter/VS Code and execute all cells. The notebook:
-
-* reads the raw SPSS tables and codebook,
-* applies the SPSS value labels (Dutch → English),
-* constructs the outcome variables (`OUTCOME_MACE`, `OUTCOME_CDR_INCREASE`),
-* computes the SCORE2 cardiovascular risk score,
-* imputes missing numeric values with `IterativeImputer`,
-* writes `df.parquet`, `df_imp.parquet`, and `bn_vars.parquet` to the configured `output_dir` (for example `data/`).
----
-
-## Running the Bayesian-network notebook
-
-1. Start Jupyter (or VS Code, or JupyterLab) in the repository.
-2. Open `projects/HBC/01_bayesian_network.ipynb`.
-3. Execute the cells in order. The first cell auto-detects the processed data under your configured `output_dir` (e.g., `data/`) and loads:
-   - `df.parquet`: the labelled, non-imputed dataset (categorical labels preserved).
-   - `df_imp.parquet`: the imputed dataset used for learning.
-   - `bn_vars.parquet`: metadata linking each variable to its expert-defined layer.
-4. Subsequent sections:
-   - **Discretisation** — uses `pyAgrum`’s `DiscreteTypeProcessor` with quantile-based binning.
-   - **Structure learning** — enforces the layer constraints and adds explicit arcs from the outcome nodes to the dropout layer.
-   - **Inference & visualisation** — produces network and posterior plots, CPT displays
----
+> ⚠️ **Important:** each subproject under `projects/` is tailored to a
+> specific cohort. If you apply the code to a different dataset, start
+> from `projects/_TEMPLATE/` and adapt the notebooks so the logic
+> matches your cohort's structure, coding, and outcomes.
 
 ## Repository layout
 
 ```
-├── README.md                 Project guide (this file)
+04_VCI_BAYES/
+├── README.md                    ← this file
+├── CONTRIBUTING.md              How to add a new subproject / conventions
 ├── LICENSE
-├── config/
-│   ├── data_paths.example.yml
-│   ├── global.dcf            Legacy config (kept for reference)
-│   └── global.yml            Defaults and BN settings
-├── core/                     Shared helpers (Python + legacy R)
-│   ├── globals.R
-│   ├── helpers.R
-│   ├── io.py
-│   ├── plotting.py
+├── pyproject.toml               Package metadata (for future `pip install -e .`)
+│
+├── core/                        Shared helpers for every subproject
+│   ├── config.py                YAML config loader + PreprocessConfig
+│   ├── io.py                    SPSS + parquet I/O
+│   ├── preprocess.py            Generic transforms (coalesce, imputation, ...)
+│   ├── risk_scores.py           SCORE2 cardiovascular risk (verified vs HBC)
+│   ├── discretisation.py        pyAgrum type-processor wrapper
+│   ├── bn_utils.py              build_bn, bootstrap, knob-sweep sensitivity
+│   ├── inference.py             MI and conditional-MI rankings
+│   ├── plotting.py              Layer colours, BN export, knob plot
+│   ├── tables.py                Grouped "Table 1" builder
 │   └── README.md
-├── concept/
+│
+├── config/                      Repo-wide defaults (mostly legacy)
+│   ├── global.yml               Historical shared settings
+│   ├── global.dcf               Legacy R config (kept for reference)
+│   └── data_paths.example.yml   Template for local data paths
+│
+├── concept/                     High-level notes on the modelling approach
 │   ├── 00_main_concept.ipynb
 │   └── README.md
-├── projects/
-│   ├── HBC/
-│   │   ├── 00_preprocess.ipynb
-│   │   ├── 01_bayesian_network.ipynb
-│   │   └── config.yml
-│   ├── METAVCI_COGNITION/
-│   │   ├── 00_preprocess.ipynb
-│   │   ├── 01_analysis.ipynb
-│   │   └── config.yml
-│   └── METAVCI_WMH_BLOOD/
-│       ├── 00_preprocess.ipynb
-│       ├── 01_bayesian_network.ipynb
-│       └── config.yml
-├── outputs/
-│   ├── graphs/
-│   ├── tables/
-│   └── manuscript/
-├── docs/
-│   ├── manuscript/
-│   └── figures/
-├── logs/
-└── cache/
+│
+└── projects/                    One folder per analysis
+    ├── _TEMPLATE/               Copy this to start a new subproject
+    │   ├── README.md            Step-by-step guide
+    │   ├── config.yml           Fully commented
+    │   ├── 00_preprocess.ipynb  16 cells wired to core/, with TODOs
+    │   ├── 01_analysis.ipynb    24 cells wired to core/, with TODOs
+    │   ├── outputs/             graphs/, tables/
+    │   └── docs/manuscript/     current/, archive/, supplement_figures/
+    │
+    ├── HBC/                     Heart-Brain Connection (near-publication)
+    │   ├── 00_preprocess.ipynb
+    │   ├── 01_bayesian_network.ipynb
+    │   ├── preprocess_data.py   CLI equivalent of 00_preprocess
+    │   ├── config.yml
+    │   ├── bn_joint.bifxml      Persisted joint BN
+    │   ├── outputs/             graphs/, tables/, archive/legacy-2025/
+    │   └── docs/manuscript/     current/, archive/, supplement_figures/
+    │
+    ├── METAVCI_COGNITION/       Cognitive-outcome BN across METAVCI
+    │   ├── 00_preprocess.ipynb
+    │   ├── 01_analysis.ipynb
+    │   ├── config.yml
+    │   ├── codebook/            Variable → layer mapping (Excel)
+    │   ├── outputs/
+    │   └── docs/manuscript/
+    │
+    └── METAVCI_WMH_BLOOD/       Blood-biomarker → WMH BN
+        ├── 00_preprocess.ipynb
+        ├── 01_bayesian_network.ipynb
+        ├── config.yml
+        ├── outputs/graphs/      Robustness + MI plots
+        ├── outputs/tables/      Conditional probability tables
+        └── docs/manuscript/     Methods writeup + curated figures
 ```
 
----
+## Quick start (HBC / any subproject)
+
+1. **Install Python ≥ 3.11** and open a terminal in the repo root.
+2. **Create a virtual environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate           # Windows: venv\Scripts\activate
+   pip install pandas numpy pyreadstat scikit-learn PyYAML pyagrum \
+               matplotlib scipy ipywidgets pyarrow
+   ```
+   (Or once the package is finalised: `pip install -e .` — see
+   [pyproject.toml](pyproject.toml).)
+3. **Point the subproject at your data.** Each subproject has its own
+   `config.yml`. For HBC:
+   ```yaml
+   # projects/HBC/config.yml
+   project_root: '/path/to/projects/HBC'
+   raw_dir:      '/secure/location/hartbrein/raw'
+   output_dir:   '/secure/location/hartbrein/processed'
+   codebook_path:'/secure/location/hartbrein/meta/HBC_CODEBOOK_LABELS.xlsx'
+   risk_region:  'Low'
+   seed:         1234
+   ```
+4. **Preprocess** — open `projects/HBC/00_preprocess.ipynb`, run all.
+   Produces `df.parquet`, `df_imp.parquet`, `bn_vars.parquet` in
+   `output_dir`.
+5. **Analyse** — open `projects/HBC/01_bayesian_network.ipynb`, run
+   all. Reproduces the network structure, MI rankings, bootstrap
+   stability, scenario probabilities, and PDF figures.
+
+For a *new* subproject (different cohort / research question), start
+from `projects/_TEMPLATE/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+the walk-through.
+
+## Subproject index
+
+| Folder | Research question | Status |
+| --- | --- | --- |
+| [`projects/HBC/`](projects/HBC/README.md) | Bayesian network in the Heart-Brain Connection cohort | Manuscript in preparation |
+| [`projects/METAVCI_COGNITION/`](projects/METAVCI_COGNITION/README.md) | Cognitive outcomes across METAVCI cohorts | Scaffold wired to `core/`; codebook + analysis choices in progress |
+| [`projects/METAVCI_WMH_BLOOD/`](projects/METAVCI_WMH_BLOOD/README.md) | Blood biomarkers → white-matter hyperintensities | Scaffold wired to `core/`; earlier analysis outputs archived under `outputs/` and `docs/manuscript/` |
+| [`projects/_TEMPLATE/`](projects/_TEMPLATE/README.md) | Starter for new subprojects | — |
 
 ## Requirements
 
-- Python ≥ 3.12
-- pandas, numpy
-- pyreadstat
-- scikit-learn
-- PyYAML
-- matplotlib
-- PyAgrum (including `pyagrum.skbn`, `pyagrum.lib.notebook`, etc.)
-- SciPy
-- ipywidgets
+- Python ≥ 3.11
+- `pandas` ≥ 2, `numpy`, `scipy`
+- `pyreadstat` (SPSS files)
+- `scikit-learn` (imputation)
+- `pyagrum` including `pyagrum.lib.notebook`, `pyagrum.lib.discreteTypeProcessor`
+- `matplotlib`, `ipywidgets`
+- `pyarrow` (parquet)
+- `PyYAML`
 
-Install manually (`pip install …`) or via a requirements file if you maintain one.
+Optional: `statsmodels` (biomarker logistic regression cells in the
+HBC analysis notebook).
+
+## Data safety
+
+`.gitignore` blocks common data and manuscript formats
+(`*.sav`, `*.parquet`, `*.csv`, `*.xlsx`, `*.pdf`, `*.docx`, ...) so
+sensitive files stay local. Folder scaffolding is preserved via
+`.gitkeep` files that survive a clone.
+
+Never commit `config.yml` if it contains confidential absolute paths;
+edit locally per machine.
