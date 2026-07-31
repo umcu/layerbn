@@ -112,6 +112,16 @@ cover/
 .DS_Store
 Thumbs.db
 
+# --- Office / Word scratch & lock files ---
+~$*
+*.sb-*
+
+# --- R session junk ---
+.Rhistory
+.RData
+.Rproj.user/
+*.vdoc.*
+
 # --- Docs build outputs ---
 docs/_build/
 site/
