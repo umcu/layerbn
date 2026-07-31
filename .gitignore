@@ -33,10 +33,26 @@ datasets/
 *.key
 *.numbers
 *.pages
-docs/
-.png
-graphs/
-out/
+# --- Research artifacts (figures, network files, presentations, archives) ---
+# Ignored by file type rather than by folder so directories stay walkable
+# (this lets .gitkeep files preserve the folder scaffolding in a clone).
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.svg
+*.eps
+*.zip
+*.sif
+*.cys
+*.gml
+
+# Keep folder scaffolding discoverable
+!**/.gitkeep
+
+# Keep the repo logo (referenced in README)
+!logo-vci-bayes.png
 
 # --- Python cache / bytecode ---
 __pycache__/
