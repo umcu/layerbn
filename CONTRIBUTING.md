@@ -1,4 +1,4 @@
-# Contributing to VCI-Bayes-Explore
+# Contributing to VCI-Bayes
 
 This guide is for anyone (usually a research colleague) who wants to
 add a **new subproject** or contribute to an existing one. It focuses

@@ -1,9 +1,9 @@
 
-# VCI-Bayes-Explore
+# VCI-Bayes
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-**VCI-Bayes-Explore** packages the preprocessing and modelling workflow
+**VCI-Bayes** packages the preprocessing and modelling workflow
 behind Bayesian-network analyses in the [Vascular Cognitive Impairment
 (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
 of the UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
