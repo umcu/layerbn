@@ -1,4 +1,34 @@
-# Project-specific settings for METAVCI_WMH_BLOOD.
+# METAVCI_WMH_BLOOD — project configuration.
+# ─────────────────────────────────────────────────────────────────────────
+# Loaded by core.config.load_project_config().
+# Keep secret / machine-specific paths in here; do NOT commit them
+# unedited if they contain confidential file locations.
+
+# Absolute path to this project folder. Everything else is resolved
+# relative to this if not itself absolute.
+project_root: '/absolute/path/to/projects/METAVCI_WMH_BLOOD'
+
+# Where your raw METAVCI cohort files live (SPSS .sav, CSV, ...).
+raw_dir: '/absolute/path/to/METAVCI/raw'
+
+# Where processed parquet files will be written.
+output_dir: '/absolute/path/to/METAVCI/processed'
+
+# Optional codebook (VARIABLE NAME -> LAYER). Leave commented if you
+# define the mapping inline in 00_preprocess.ipynb.
+# codebook_path: '/absolute/path/to/codebook.xlsx'
+
+# SCORE2 region — only used if the preprocess pipeline computes SCORE2.
+risk_region: 'Low'
+
+# Random seed for reproducibility.
+seed: 1234
+
+# ─── Cohort-specific settings ────────────────────────────────────────────
+# Add extra keys here; they land in PreprocessConfig.extra as a plain
+# dict, available from notebooks via `config.extra["key"]`.
 #
-# Copy or adapt the keys from `config/global.yml` and `projects/HBC/config.yml`
-# to match the METAVCI_WMH_BLOOD dataset (paths, SCORE2 region, etc.).
+# Examples for a WMH + blood-biomarker pipeline:
+# blood_biomarkers: [BNP, pTau181, NfL, GFAP]
+# wmh_score: WMH_SFO
+# outcome_variables: [OUTCOME_WMH_PROGRESSION, OUTCOME_COGNITIVE_DECLINE]
