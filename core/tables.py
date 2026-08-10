@@ -23,10 +23,20 @@ def _normalize_label(value: Any) -> str | None:
     if isinstance(value, str):
         if not value.strip():
             return None
-        return value.strip().casefold()
+        return _drop_null_strings(value.strip().casefold())
     if isinstance(value, (float, int)) and pd.isna(value):
         return None
-    return str(value).strip().casefold()
+    return _drop_null_strings(str(value).strip().casefold())
+
+
+def _drop_null_strings(normalized: str) -> str | None:
+    """Treat stringified nulls as missing.
+
+    A pipeline that title-cases object columns (`col.astype(str).str.title()`)
+    turns real NaN into the *string* "Nan". Without this, those rows land in
+    the denominator of every percentage.
+    """
+    return None if normalized in {"nan", "none", "<na>"} else normalized
 
 
 def format_median_iqr(series: pd.Series | None) -> str:
@@ -51,17 +61,26 @@ def format_mean_sd(series: pd.Series | None) -> str:
 
 
 def format_count_pct(series: pd.Series | None, targets: Sequence[str]) -> str:
-    """`"n (pct)"` of values in `series` matching any label in `targets`."""
+    """`"n (pct)"` of values in `series` whose label *starts with* any `target`.
+
+    Matching is by case-insensitive **prefix**, not equality, so a single
+    target absorbs the trailing variation real data carries — `"ja, met
+    leefstijl"` matches both `"Ja, met leefstijladvies"` and the title-cased
+    `"Ja, Met Leefstijladvies"`. Keep targets specific enough not to collide:
+    a short prefix matches greedily.
+    """
     if series is None:
         return "NA"
     normalized = pd.Series(series).dropna().map(_normalize_label).dropna()
     if normalized.empty:
         return "NA"
-    target_norms = {_normalize_label(v) for v in targets if v is not None}
-    target_norms.discard(None)
-    if not target_norms:
+    target_prefixes = [_normalize_label(v) for v in targets if v is not None]
+    target_prefixes = [p for p in target_prefixes if p]
+    if not target_prefixes:
         return "NA"
-    count = normalized.isin(target_norms).sum()
+    count = normalized.map(
+        lambda v: any(v.startswith(p) for p in target_prefixes)
+    ).sum()
     pct = (count / len(normalized)) * 100
     return f"{int(count)} ({pct:.1f})"
 

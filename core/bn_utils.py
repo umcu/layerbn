@@ -184,13 +184,20 @@ def build_bn(
     else:
         learner.useGreedyHillClimbing()
 
-    dropout_vars, true_outcomes = configure_guided_structure(
-        learner, layer_map_filtered, variables_to_keep, outcomes,
-        dropout_patterns=dropout_patterns,
-    ) if enforce_structure else collect_outcome_vars(
-        layer_map_filtered, outcome_patterns=outcome_patterns,
-        dropout_patterns=dropout_patterns,
-    )
+    if enforce_structure:
+        dropout_vars, true_outcomes = configure_guided_structure(
+            learner, layer_map_filtered, variables_to_keep, outcomes,
+            dropout_patterns=dropout_patterns,
+        )
+    else:
+        # Same pair `configure_guided_structure` would have returned, without
+        # touching the learner. NB: `collect_outcome_vars` returns
+        # (outcome_vars, dropout_vars) — the opposite order — so it must not be
+        # unpacked into (dropout_vars, true_outcomes) directly.
+        dropout_vars = [v for k in layer_map_filtered
+                        if _match_any(k, dropout_patterns)
+                        for v in layer_map_filtered[k]]
+        true_outcomes = [v for v in outcomes if v not in dropout_vars]
 
     learner.setMaxIndegree(max_indegree)
     bn = learner.learnBN()
@@ -223,6 +230,14 @@ def bootstrap_edge_frequencies(
 
     Extra keyword arguments are forwarded to `build_bn_func` unchanged so
     callers can pin `score`, `use_smoothing`, `fixed_template`, etc.
+
+    Notes
+    -----
+    The denominator is `n_bootstraps`, **not** the number of resamples that
+    fitted successfully. A failed fit therefore lowers every frequency rather
+    than being excluded. This matches the HBC notebook the function was ported
+    from, whose frequencies are published as the `f=NN%` arc labels; changing
+    it would silently restate those numbers.
     """
     counts: dict[tuple[str, str], int] = defaultdict(int)
     successes = 0
@@ -242,8 +257,10 @@ def bootstrap_edge_frequencies(
         for parent_id, child_id in bn.arcs():
             counts[(bn.variable(parent_id).name(), bn.variable(child_id).name())] += 1
 
-    denom = successes or 1
-    return {edge: count / denom for edge, count in counts.items()}
+    if successes < n_bootstraps:
+        print(f"Note: {n_bootstraps - successes}/{n_bootstraps} bootstrap fits "
+              "failed; frequencies are still divided by n_bootstraps.")
+    return {edge: count / n_bootstraps for edge, count in counts.items()}
 
 
 def bootstrap_scenario_risks(
