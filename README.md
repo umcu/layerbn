@@ -16,7 +16,7 @@ probabilities for cognitive decline and MACE, benchmarks emerging
 biomarkers via mutual information, and explicitly models dropout.
 
 Additional subprojects apply the same shared pipeline (`core/`) to
-different research questions across the METAVCI cohorts.
+different research questions across the Meta VCI Map cohorts.
 
 For more on the Heart-Brain Connection study: https://hart-brein.nl/
 (supported by the [Dutch Heart Foundation](https://www.hartstichting.nl)).
@@ -85,7 +85,7 @@ If you use this code, please cite:
     │   ├── outputs/             graphs/, tables/, archive/legacy-2025/
     │   └── docs/manuscript/     current/, archive/, supplement_figures/
     │
-    ├── METAVCI_COGNITION/       Cognitive-outcome BN across METAVCI
+    ├── METAVCI_COGNITION/       Cognition-outcome BN in Meta VCI Map
     │   ├── 00_preprocess.ipynb
     │   ├── 01_analysis.ipynb
     │   ├── config.yml
@@ -141,7 +141,7 @@ the walk-through.
 | Folder | Research question | Status |
 | --- | --- | --- |
 | [`projects/HBC/`](projects/HBC/README.md) | Bayesian network in the Heart-Brain Connection cohort | Manuscript in preparation |
-| [`projects/METAVCI_COGNITION/`](projects/METAVCI_COGNITION/README.md) | Cognitive outcomes across METAVCI cohorts | Scaffold wired to `core/`; codebook + analysis choices in progress |
+| [`projects/METAVCI_COGNITION/`](projects/METAVCI_COGNITION/README.md) | Cognitive outcomes across Meta VCI Map cohorts | Scaffold wired to `core/`; codebook + analysis choices in progress |
 | [`projects/METAVCI_WMH_BLOOD/`](projects/METAVCI_WMH_BLOOD/README.md) | Blood biomarkers → white-matter hyperintensities | Scaffold wired to `core/`; earlier analysis outputs archived under `outputs/` and `docs/manuscript/` |
 | [`projects/_TEMPLATE/`](projects/_TEMPLATE/README.md) | Starter for new subprojects | — |
 
