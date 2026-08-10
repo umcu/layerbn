@@ -84,7 +84,13 @@ venv.bak/
 .venv-win/
 
 # --- Local configs ---
+# Echte, machine-specifieke paden mogen NOOIT in de repository komen.
+# Elk project levert een `config.example.yml` (getrackt, alleen
+# placeholders); die kopieer je naar `config.yml` (genegeerd) en daar
+# vul je je eigen paden in.
 config/*.local.yml
+projects/*/config.yml
+!**/config.example.yml
 
 # --- Jupyter / IPython ---
 .ipynb_checkpoints/

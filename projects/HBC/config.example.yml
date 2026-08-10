@@ -1,0 +1,27 @@
+# HBC — projectconfiguratie (VOORBEELD).
+# ─────────────────────────────────────────────────────────────────────────
+# Kopieer dit bestand naar `config.yml` en vul je eigen paden in:
+#
+#     cp config.example.yml config.yml
+#
+# `config.yml` staat in .gitignore, dus je echte paden komen NOOIT in de
+# repository terecht. Alleen dit voorbeeldbestand wordt getrackt — houd
+# het vrij van echte paden.
+
+# Absoluut pad naar je HBC-werkmap (die met data/ en output/ erin).
+# Alle andere paden worden hier relatief aan opgelost als ze niet zelf
+# absoluut zijn.
+project_root: '/ABSOLUTE/PATH/TO/HBC_PROJECT'
+
+# Ruwe Heart-Brain Connection bestanden: df.sav, fu_2.sav,
+# compound_score.xlsx, cs_cleaned_final.csv
+raw_dir: '/ABSOLUTE/PATH/TO/HBC_PROJECT/data'
+
+# Waar df.parquet, df_imp.parquet en bn_vars.parquet worden weggeschreven.
+output_dir: '/ABSOLUTE/PATH/TO/HBC_PROJECT/output'
+
+# Codebook met variabelenamen, labels en layers.
+codebook_path: '/ABSOLUTE/PATH/TO/HBC_PROJECT/data/HBC_CODEBOOK_LABELS.xlsx'
+
+# SCORE2 2021 kalibratieregio (Nederland = Low).
+risk_region: 'Low'
