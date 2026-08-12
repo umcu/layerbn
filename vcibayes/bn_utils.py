@@ -1,9 +1,14 @@
 """Bayesian network structure learning, bootstrapping, and scenarios.
 
-Ports the reusable pieces of `projects/HBC/01_bayesian_network.ipynb`.
-Everything cohort-specific (which layer to exclude, which strings mark
-outcome/dropout layers) is a parameter so METAVCI subprojects can use
-the same functions with their own conventions.
+Everything cohort-specific is a parameter: which layers to exclude, which
+layer names mark the outcome and dropout roles, the score, the seed. No
+cohort's conventions are assumed.
+
+These functions take the layer map, the discretisation and the layer role
+patterns as separate arguments, which means a caller has to keep them
+consistent with the spec at every call site. `vcibayes.analysis.Analysis`
+does that for you and is the recommended entry point; use these directly
+when you need control it does not expose.
 """
 from __future__ import annotations
 
@@ -131,8 +136,8 @@ def build_bn(
         Use a pre-computed discretisation template so bootstrap resamples
         share bin edges. Build once with `type_processor.discretizedTemplate(df)`.
     exclude_layers : iterable of str
-        Layer names whose variables should be dropped before learning
-        (e.g. HBC excludes the biomarker layer from the joint network).
+        Layer names whose variables should be dropped before learning, for
+        instance to leave out a layer measured on only part of the cohort.
     use_smoothing : bool
         Laplace prior. Automatically on for BIC. Turn on elsewhere when
         rare state combinations trigger inference errors.
@@ -235,9 +240,9 @@ def bootstrap_edge_frequencies(
     -----
     The denominator is `n_bootstraps`, **not** the number of resamples that
     fitted successfully. A failed fit therefore lowers every frequency rather
-    than being excluded. This matches the HBC notebook the function was ported
-    from, whose frequencies are published as the `f=NN%` arc labels; changing
-    it would silently restate those numbers.
+    than being excluded from the calculation. These frequencies are reported
+    as the `f=NN%` arc labels in published figures, so changing the
+    denominator would silently restate them.
     """
     counts: dict[tuple[str, str], int] = defaultdict(int)
     successes = 0
@@ -281,12 +286,29 @@ def bootstrap_scenario_risks(
     Parameters
     ----------
     scenario_profiles : sequence of (label, evidence_dict)
-        Each dict maps variable name → discrete state (already resolved
-        via `state_for_value` if needed).
+        Each dict maps a variable name to the evidence for it, passed to
+        `LazyPropagation.setEvidence` unchanged. Prefer **state indices**:
+        pyAgrum reads a bare integer as a state index, a numeric *string*
+        as a value to place in a bin, and rejects an interval label such as
+        `'(45;64.6['` outright. `vcibayes.analysis.Analysis.resolve_profile`
+        converts any of these to indices and reports what it could not
+        match; using it avoids the failure mode below.
     target_outcomes : sequence of (var_name, display_label)
     outcomes_for_learning : sequence of str
         Passed to `build_bn_func` as the fixed set of outcomes so bootstrap
         networks are structurally comparable across resamples.
+
+    Notes
+    -----
+    Evidence that pyAgrum rejects raises `gum.InvalidArgument`, which this
+    function catches and skips. The affected scenario then produces no rows
+    at all rather than an error, so check that every profile you passed
+    appears in the result.
+
+    Pass `fixed_template` (via `**build_kwargs`) when the profiles refer to
+    discretised variables. Without it every resample recomputes its own bin
+    edges, and a fixed profile silently refers to a different group of
+    people in each resample.
     """
     import pyagrum as gum
 
@@ -386,7 +408,14 @@ def bootstrap_knob_sweep(
     import pyagrum as gum
 
     fixed_template = type_processor.discretizedTemplate(
-        _reduced_for_template(df, layer_map, outcomes_for_learning, build_kwargs.get("exclude_layers", ()))
+        _reduced_for_template(
+            df, layer_map, outcomes_for_learning,
+            build_kwargs.get("exclude_layers", ()),
+            outcome_patterns=build_kwargs.get(
+                "outcome_patterns", DEFAULT_OUTCOME_LAYER_PATTERNS),
+            dropout_patterns=build_kwargs.get(
+                "dropout_patterns", DEFAULT_DROPOUT_LAYER_PATTERNS),
+        )
     )
     build_kwargs = {**build_kwargs, "fixed_template": fixed_template, "use_smoothing": True}
 
@@ -491,9 +520,20 @@ def _reduced_for_template(
     layer_map: Mapping[str, Sequence[str]],
     outcomes_for_learning: Sequence[str],
     exclude_layers: Iterable[str],
+    *,
+    outcome_patterns: Sequence[str] = DEFAULT_OUTCOME_LAYER_PATTERNS,
+    dropout_patterns: Sequence[str] = DEFAULT_DROPOUT_LAYER_PATTERNS,
 ) -> pd.DataFrame:
-    """Reproduce `build_bn`'s column reduction so one template covers all bootstraps."""
+    """Reproduce `build_bn`'s column reduction so one template covers all bootstraps.
+
+    The patterns must be the same ones `build_bn` will be called with. If they
+    are not, this function and `build_bn` disagree about which columns are
+    outcomes, the template ends up describing a different set of variables
+    than the learner is given, and `BNLearner` raises.
+    """
     excluded = [v for k in exclude_layers for v in layer_map.get(k, [])]
-    outcome_all, dropout_all = collect_outcome_vars(layer_map)
+    outcome_all, dropout_all = collect_outcome_vars(
+        layer_map, outcome_patterns=outcome_patterns, dropout_patterns=dropout_patterns,
+    )
     drop_outcomes = [v for v in outcome_all + dropout_all if v not in outcomes_for_learning]
     return df.drop(columns=drop_outcomes + excluded, errors="ignore")

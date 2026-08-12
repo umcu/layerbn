@@ -9,21 +9,27 @@ authors:
     affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
 repository-code: "https://github.com/umcu/vci-bayes"
 license: MIT
-version: 1.0.0
+version: 1.1.0
+date-released: "2026-08-12"
 identifiers:
   - type: doi
     value: 10.5281/zenodo.17305046
     description: "Concept DOI for all versions"
 abstract: >-
-  vcibayes learns knowledge-guided Bayesian networks from cohort data. An
-  expert-defined ordering of variable layers constrains structure learning so
-  arcs may only run downstream through the layers, and non-random dropout is
-  modelled explicitly as a selection layer downstream of the outcomes. The
-  analysis is declared in a YAML spec rather than in code: layers and their
-  order, network variants, discretisation, seed, bootstrap counts, scenario
-  profiles and sensitivity sweeps. Also provides bootstrap edge-stability
-  estimates, mutual-information rankings, and single-knob sensitivity analysis
-  with an overadjustment check.
+  vcibayes learns Bayesian networks from cohort data under a structure
+  specified by the investigator. Variables are grouped into ordered layers,
+  and the learner may only draw an arc from a layer to itself or to a layer
+  further down that order, so the recovered structure respects the assumed
+  direction of influence. Dropout is represented as a selection layer
+  downstream of the outcomes, allowing non-random loss to follow-up to be
+  modelled rather than imputed away. The analysis is declared in a YAML
+  specification rather than in code, covering the layers and their order,
+  network variants, discretisation, random seed, bootstrap counts, participant
+  profiles and sensitivity sweeps, so that it can be published alongside a
+  manuscript. The package also provides bootstrap estimates of arc stability,
+  mutual-information rankings of variables against each outcome, and
+  single-variable sensitivity analysis with a check for conditioning on
+  mediators.
 keywords:
   - Bayesian network
   - structure learning

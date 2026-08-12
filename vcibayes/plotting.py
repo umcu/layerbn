@@ -5,7 +5,7 @@ and `pyagrum.lib.image.export*` — build a per-layer colour scale,
 translate that into a per-node `nodeColor` dict, and expose one call
 that both shows the figure and writes a PDF (editable in Illustrator).
 
-Also includes the polished single-knob sweep plot from the HBC notebook.
+Also provides the single-knob sensitivity plot used by `plot_knob_sweep`.
 """
 from __future__ import annotations
 

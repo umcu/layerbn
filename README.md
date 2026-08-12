@@ -2,70 +2,97 @@
 
 ![VCI-Bayes Logo](logo-vci-bayes.png)
 
-**vcibayes** learns knowledge-guided Bayesian networks from cohort data.
+**vcibayes** learns Bayesian networks from cohort data under a structure that
+you specify rather than one discovered from scratch.
 
-An expert-defined ordering of variable *layers* constrains structure learning,
-so arcs may only run downstream through the layers
-(**demographics → vascular risk → neuroimaging → function → outcomes**).
-Non-random dropout is modelled explicitly as a *selection* layer downstream of
-the outcomes, rather than being imputed away.
+You group your variables into ordered layers, for example demographics, then
+risk factors, then imaging, then function, then outcomes. The learner may only
+draw an arc from a layer to itself or to a layer further down that list, so the
+recovered network cannot claim that an outcome causes a risk factor. Dropout is
+represented as its own layer downstream of the outcomes, which lets the
+analysis model who was lost to follow-up instead of imputing it away or
+discarding incomplete cases.
 
-The analysis is declared in a YAML spec, not in code. A new cohort writes a
-`spec.yml` describing its columns and layers; it does not edit this package.
+The analysis is written in a YAML file, not in code. Adapting it to a new
+cohort means editing that file. It does not mean editing this package, and it
+does not require writing Python.
 
 Developed in the [Vascular Cognitive Impairment (VCI) research
 group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
 of UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
 
-## Install
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)](https://doi.org/10.5281/zenodo.17305046)
+
+---
+
+## Getting started
+
+Requires Python 3.11 or newer.
 
 ```bash
-pip install git+https://github.com/umcu/vci-bayes@v1.0.0
+pip install "vcibayes[notebook] @ git+https://github.com/umcu/vci-bayes@v1.1.0"
+vcibayes init my-study
+cd my-study
+jupyter lab analysis.ipynb
 ```
 
-Requires Python ≥ 3.11. `pyagrum` supplies the structure learner and inference
-engine.
+The `[notebook]` part additionally installs JupyterLab and the Parquet
+reader. Leave it off if you already have Jupyter, or if you are scripting
+rather than using the notebook:
 
-## Use
-
-```python
-from vcibayes.spec import load_spec
-from vcibayes.discretisation import make_type_processor
-from vcibayes.bn_utils import build_bn, bootstrap_edge_frequencies, bootstrap_knob_sweep
-from vcibayes.inference import mutual_information_scores
-from vcibayes.plotting import default_layer_colors, build_node_colors, plot_knob_sweep
-
-spec = load_spec("spec.yml")
-
-type_processor = make_type_processor(
-    method=spec.discretisation.method,
-    n_bins=spec.discretisation.n_bins,
-    threshold=spec.discretisation.threshold,
-)
-
-bn = build_bn(
-    df,                                   # analysis-ready, fully imputed
-    outcomes=list(spec.variant("joint").outcomes),
-    layer_map=spec.layer_map,             # ordered; the order IS the constraint
-    type_processor=type_processor,
-    exclude_layers=list(spec.variant("joint").exclude_layers),
-    score=spec.model.score,
-    random_seed=spec.model.seed,
-)
+```bash
+pip install "git+https://github.com/umcu/vci-bayes@v1.1.0"
 ```
 
-### The spec
+The quotes matter: without them the shell tries to interpret the square
+brackets.
+
+`vcibayes init` creates two files: `spec.yml`, which describes the analysis,
+and `analysis.ipynb`, which runs it.
+
+**The notebook runs as it stands.** It uses a small simulated cohort, so you
+can see the entire analysis end to end before adapting anything. When you are
+ready, edit `spec.yml` to describe your own data and set `USE_DEMO_DATA = False`
+in the notebook's first cell.
+
+The variable names in the template are placeholders with no meaning. Your
+cohort will have different variables, a different number of layers and
+different outcomes. None of that needs a code change.
+
+### What the notebook produces
+
+| Section | Output |
+| --- | --- |
+| Discretisation | The bins every continuous variable was cut into. Read this first; every later result depends on it |
+| Network | The learned structure, with nodes coloured by layer |
+| Edge stability | How often each arc survives resampling, as a table and as arc colour and width in the figure |
+| Variable importance | Every variable ranked by mutual information with each outcome, raw and conditional on the outcome's parents |
+| Layer ablation | The same network learned with and without a layer, compared on the outcomes' parents |
+| Scenario risks | Outcome probabilities for participant profiles you specify, with bootstrap intervals |
+| Sensitivity sweep | How the outcome probabilities respond as one variable moves across its states |
+
+Results are written to `outputs/` as CSV files, a PDF figure, and the network
+itself in `.bifxml`, which can be reopened without repeating the analysis.
+
+---
+
+## The specification
+
+`spec.yml` holds every choice the analysis makes. This is an abbreviated
+example; the file `vcibayes init` writes is fully commented.
 
 ```yaml
-layers:                       # ORDER IS THE CONSTRAINT
+layers:                        # THE ORDER OF THIS LIST IS THE CONSTRAINT
   - name: "L0 – Demographics"
     role: covariate
     variables: [AGE, SEX]
-  - name: "L8 – Outcomes"
-    role: outcome
-    variables: [OUTCOME_X]
-  - name: "L9 – Dropout"
-    role: selection           # downstream of the outcomes
+
+  - name: "L5 – Outcomes"
+    role: outcome              # no arcs between outcomes
+    variables: [OUTCOME DECLINE]
+
+  - name: "L6 – Dropout"
+    role: selection            # downstream of the outcomes
     variables: [DROPOUT REASON]
 
 discretisation: {method: quantile, n_bins: 4, threshold: 10}
@@ -74,39 +101,106 @@ bootstrap: {n: 200}
 
 variants:
   - name: joint
-    outcomes: [OUTCOME_X, DROPOUT REASON]
+    outcomes: [OUTCOME DECLINE, DROPOUT REASON]
     exclude_layers: []
 ```
 
-`load_spec` validates eagerly and names the offending key
-(`layers[3].variables[1]: variable 'AGE' already appears in layers[0] …`), so
-a typo surfaces before a 40-minute bootstrap rather than after it. A variable
-must belong to exactly one layer.
+The order of the `layers` list is the constraint. Nothing else determines it:
+not the names, not the numbering, not how the file is sorted. Put the layers in
+the order you would defend in a methods section, and reordering them changes
+the analysis.
 
-## Modules
+`role` marks the two layers that are treated specially. `outcome` layers hold
+your endpoints, and arcs between endpoints are forbidden so that one is never
+reported as a cause of another. A `selection` layer holds dropout: arcs into it
+are allowed only from outcomes, and every outcome is connected to it after
+learning.
 
-| Module | What it holds |
-| --- | --- |
-| `spec.py` | `load_spec`, `Spec`, `check_against_dataframe` — the declarative analysis spec |
-| `bn_utils.py` | `build_bn` (layer-constrained structure learning), `bootstrap_edge_frequencies`, `bootstrap_scenario_risks`, `bootstrap_knob_sweep` |
-| `discretisation.py` | `make_type_processor`, `state_for_value`, `describe_template` |
-| `inference.py` | `mutual_information_scores`, `conditional_mutual_information_scores` |
-| `plotting.py` | `default_layer_colors`, `build_node_colors`, `show_and_save_bn`, `plot_knob_sweep` |
-| `preprocess.py` | `impute_dataframe`, `coalesce`, `to_datetime`, `translate_labels` |
-| `config.py` | `load_project_config` — machine-specific paths, kept out of the spec |
+To check a spec without opening a notebook:
+
+```bash
+vcibayes check spec.yml
+```
+
+This validates the file and prints the layer order it will impose. Errors name
+the exact key and suggest a correction:
+
+```
+INVALID: spec.yml: variants[0].exclude_layers[0]: 'L2 - Optional markers'
+is not a declared layer. Did you mean 'L2 – Optional markers'?
+```
+
+Validation happens before any model is fitted, so a typo costs a second rather
+than surfacing after a bootstrap has been running for half an hour.
+
+Machine-specific paths stay out of the spec. They belong in `config.yml`, which
+is not shared. That separation is what makes `spec.yml` publishable alongside a
+manuscript: it records what the analysis was, and nothing about where it ran.
+
+---
 
 ## Scope
 
-This package starts at an **analysis-ready dataframe**. Turning a cohort's raw
-files into that dataframe — outcome derivation, censoring, dropout
-canonicalisation, derived variables — is cohort-specific judgement that no
-schema expresses usefully, and it belongs in the analysis repository.
+This package starts at an **analysis-ready dataframe**: one row per
+participant, one column per variable, no missing values.
+
+Turning a cohort's raw files into that table is deliberately out of scope.
+Deriving outcomes, applying censoring rules, canonicalising dropout categories
+and deciding how to impute are judgements specific to a cohort, and no schema
+expresses them usefully. They belong in the analysis repository, in a script
+that runs before this one.
 
 Reference analysis: [`hbc-bayes`](https://github.com/umcu/hbc-bayes) (Heart-Brain
 Connection cohort), which pins a released version of this package.
 
+---
+
+## Using the functions directly
+
+The notebook covers the usual path. If you are scripting, `Analysis` exposes
+the same steps, reading every setting from the spec:
+
+```python
+from vcibayes.analysis import Analysis
+
+study = Analysis.from_files("spec.yml", "cohort.parquet")
+
+study.bins("joint")             # the discretisation actually used
+study.network("joint")          # the learned network
+study.stable_edges("joint")     # bootstrap arc frequencies, as a table
+study.information("joint")      # mutual information per outcome
+study.scenarios("joint")        # posterior risks for the spec's profiles
+study.knob_sweep("joint")       # sensitivity to one variable
+study.draw("joint", stability=True, save_path="network.pdf")
+```
+
+The underlying functions are also available individually. Note that they take
+the layer map, the score, the seed and the layer role patterns as separate
+arguments, so calling them directly means keeping those consistent with the
+spec yourself.
+
+| Module | Contents |
+| --- | --- |
+| `analysis.py` | `Analysis`, the spec-driven entry point used by the notebook |
+| `spec.py` | `load_spec`, `Spec`, `check_against_dataframe` |
+| `bn_utils.py` | `build_bn`, `bootstrap_edge_frequencies`, `bootstrap_scenario_risks`, `bootstrap_knob_sweep` |
+| `discretisation.py` | `make_type_processor`, `state_for_value`, `describe_template` |
+| `inference.py` | `mutual_information_scores`, `conditional_mutual_information_scores` |
+| `plotting.py` | `default_layer_colors`, `build_node_colors`, `show_and_save_bn`, `plot_knob_sweep` |
+| `preprocess.py` | `impute_dataframe`, `coalesce`, `to_datetime`, `translate_labels` |
+| `config.py` | `load_project_config`, for machine-specific paths |
+| `demo.py` | `make_demo_cohort`, the simulated cohort used by the template |
+
+`pyagrum` supplies the structure learner and the inference engine.
+
+---
+
+## Documentation
+
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) — error messages, what
+  each one means, and what to do about it.
+
 ## Citation
 
-Released under the [MIT License](LICENSE). See [CITATION.cff](CITATION.cff).
-
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)](https://doi.org/10.5281/zenodo.17305046)
+Released under the [MIT License](LICENSE). See [CITATION.cff](CITATION.cff) for
+citation metadata.

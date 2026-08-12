@@ -10,7 +10,7 @@ The spec starts at the analysis-ready dataframe. Preprocessing is not
 expressible here and is not meant to be.
 
     from vcibayes.spec import load_spec
-    spec = load_spec("projects/HBC/spec.yml")
+    spec = load_spec("spec.yml")
     spec.layer_map          # {layer name: [variable, ...]}, in spec order
     spec.variant("joint")   # outcomes + exclude_layers for one network
 
@@ -505,6 +505,9 @@ def check_against_dataframe(spec: Spec, columns: Iterable[str]) -> list[str]:
     unassigned = [c for c in columns if c not in spec.variables]
     if unassigned:
         warnings.append(
-            f"{len(unassigned)} column(s) in the dataframe are in no layer and "
-            f"will not be modelled: {unassigned}")
+            f"{len(unassigned)} column(s) in the dataframe are in no layer: "
+            f"{unassigned}. Passed to `build_bn` they become nodes that the "
+            f"layer constraint isolates, since it permits no arc to or from a "
+            f"variable with no layer. `vcibayes.analysis.Analysis` drops them "
+            f"instead, so the network matches the spec.")
     return warnings

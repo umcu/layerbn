@@ -1,0 +1,288 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Analysis specification — EDIT THIS FILE, NOT THE PACKAGE
+# ════════════════════════════════════════════════════════════════════════
+#
+# This file declares WHAT your analysis is. The notebook reads every choice
+# from here, so adapting the analysis to your cohort means editing this file
+# and nothing else.
+#
+# The variable names below belong to the built-in demo cohort and mean
+# nothing. Replace all of them with your own. Your cohort will have
+# different variables, a different number of layers and different outcomes;
+# none of that requires a code change.
+#
+# Machine-specific paths do NOT go here. They live in config.yml, which is
+# not shared. That separation is what makes this file publishable alongside
+# a manuscript.
+#
+# The loader validates this file as soon as it is read and names the exact
+# key it objects to, so a typo surfaces immediately rather than forty
+# minutes into a bootstrap.
+#
+# ── HOW TO ADAPT THIS FILE ──────────────────────────────────────────────
+#   1. Replace the layers with yours, in causal order (see below).
+#   2. Mark your outcome layer `role: outcome` and, if you model dropout,
+#      mark that layer `role: selection`.
+#   3. List one variant per network you want to learn.
+#   4. Point `data.path` at your analysis-ready file.
+#   5. Adjust the analyses at the bottom, or delete the ones you do not
+#      want — they are all optional.
+
+spec_version: 1
+name: my-study
+description: >
+  One or two sentences describing the analysis. This is free text; it
+  appears in the notebook's summary and is a good place to record what the
+  outcomes mean and over what follow-up period.
+
+data:
+  # The analysis-ready, fully imputed table. Relative paths resolve against
+  # `output_dir` in config.yml. Parquet, CSV, Feather, SPSS and Stata files
+  # are all read by extension.
+  #
+  # This package starts HERE. Deriving outcomes, applying censoring rules,
+  # canonicalising dropout categories and imputing are cohort-specific
+  # judgements, and they belong in your own preprocessing script.
+  path: analysis_ready.parquet
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  LAYERS — the central scientific choice
+# ════════════════════════════════════════════════════════════════════════
+#
+# THE ORDER OF THIS LIST IS THE CONSTRAINT. The learner may only draw an
+# arc from a layer to itself or to a layer further DOWN the list. Nothing
+# else about the ordering matters: not the names, not the numbering, not
+# how the file happens to be sorted. Reordering these entries changes the
+# analysis.
+#
+# So put them in the order you would defend in a methods section: what
+# could plausibly cause what. Demographics cannot be caused by an outcome,
+# so demographics come first.
+#
+# Rules the loader enforces:
+#   * every variable belongs to exactly one layer;
+#   * layer names are unique;
+#   * at least one layer has `role: outcome`;
+#   * at most one layer has `role: selection`.
+#
+# `role` values:
+#   covariate  — the default. Anything that is not an outcome or dropout.
+#   outcome    — your endpoints. The learner forbids arcs between them, so
+#                one outcome never appears as a cause of another.
+#   selection  — dropout, loss to follow-up, death before follow-up.
+#                Arcs into this layer are only allowed FROM outcomes, and
+#                every outcome is connected to it after learning. This is
+#                how the analysis represents non-random dropout instead of
+#                imputing it away or dropping incomplete cases.
+#
+# Numbering the names (L0, L1, ...) is only a readability habit. Gaps are
+# fine. You can call them anything.
+
+layers:
+  - name: "L0 – Demographics"
+    role: covariate
+    variables:
+      - AGE
+      - SEX
+      - EDUCATION YEARS
+
+  - name: "L1 – Risk factors"
+    role: covariate
+    variables:
+      - RISK SCORE
+      - EXPOSURE
+      - COMORBIDITY COUNT
+
+  # A layer you can switch off per variant — see `variants` below. Useful
+  # when part of your data is available for only some participants, or when
+  # a reviewer asks what the results look like without it.
+  - name: "L2 – Optional markers"
+    role: covariate
+    variables:
+      - MARKER 1
+      - MARKER 2
+
+  - name: "L3 – Measurements"
+    role: covariate
+    variables:
+      - MEASUREMENT A
+      - MEASUREMENT B
+
+  - name: "L4 – Baseline function"
+    role: covariate
+    variables:
+      - BASELINE TEST SCORE
+
+  - name: "L5 – Outcomes"
+    role: outcome
+    variables:
+      - OUTCOME DECLINE
+      - OUTCOME EVENT
+
+  - name: "L6 – Dropout"
+    role: selection
+    variables:
+      - DROPOUT REASON
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  DISCRETISATION
+# ════════════════════════════════════════════════════════════════════════
+#
+# Bayesian networks here work on discrete variables, so every continuous
+# variable is cut into bins. This one setting determines every bin edge in
+# the analysis, and every result is conditional on it — always look at the
+# printed bins before interpreting anything.
+#
+#   method     quantile (equal numbers of participants per bin) or uniform
+#              (equal-width bins). Quantile is the safer default for
+#              skewed clinical variables.
+#   n_bins     How many bins. More bins keep more detail but split the data
+#              thinner, and structure learning needs enough people in each
+#              combination of parent values to detect an arc at all.
+#   threshold  Variables with this many distinct values or fewer are left
+#              alone and treated as already categorical. Raise it if an
+#              ordinal score is being binned when it should not be.
+
+discretisation:
+  method: quantile
+  n_bins: 4
+  threshold: 10
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  STRUCTURE LEARNING
+# ════════════════════════════════════════════════════════════════════════
+#
+#   score         K2, BIC or BDeu. BIC penalises complexity more heavily
+#                 and returns sparser networks.
+#   use_tabu      Tabu search (true) explores more than greedy hill
+#                 climbing (false) and is slower.
+#   max_indegree  The most parents any one variable may have. A cap keeps
+#                 conditional probability tables estimable: each extra
+#                 parent multiplies the number of cells to estimate.
+#   seed          Makes the run reproducible. Report it.
+
+model:
+  score: K2
+  use_tabu: true
+  max_indegree: 5
+  seed: 42
+
+# How many resampled datasets to use when estimating how stable each arc
+# is. Every resample relearns the structure and the parameters, so this is
+# the dominant cost of the whole analysis: runtime scales roughly linearly.
+# Use 10–20 while setting up, and raise it for the run you report.
+bootstrap:
+  n: 200
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  VARIANTS — one entry per network you want to learn
+# ════════════════════════════════════════════════════════════════════════
+#
+#   outcomes        The outcome and dropout variables THIS network is
+#                   learned with. Outcome-layer variables not listed here
+#                   are removed before learning, so a single-outcome
+#                   network is not contaminated by the other endpoints.
+#   exclude_layers  Layers dropped from this network entirely.
+#   bootstrap_n     Overrides the global bootstrap count for this variant.
+#
+# A common set is: one network per outcome, one joint network with all of
+# them, and one ablation that puts an excluded layer back.
+
+variants:
+  - name: decline
+    outcomes: [OUTCOME DECLINE, DROPOUT REASON]
+    exclude_layers: ["L2 – Optional markers"]
+
+  - name: event
+    outcomes: [OUTCOME EVENT, DROPOUT REASON]
+    exclude_layers: ["L2 – Optional markers"]
+
+  # The main network: both outcomes plus dropout, learned together.
+  - name: joint
+    outcomes: [OUTCOME DECLINE, OUTCOME EVENT, DROPOUT REASON]
+    exclude_layers: ["L2 – Optional markers"]
+
+  # Ablation: identical, except the optional marker layer participates.
+  # Fewer resamples because it is only a sensitivity check.
+  - name: with_markers
+    outcomes: [OUTCOME DECLINE, OUTCOME EVENT, DROPOUT REASON]
+    exclude_layers: []
+    bootstrap_n: 20
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  ANALYSES — all optional; delete any section you do not want
+# ════════════════════════════════════════════════════════════════════════
+
+analyses:
+
+  # ── Which variables matter most for which outcome ────────────────────
+  # Ranks every variable by mutual information with the target, and also
+  # conditional on the target's parents in the network. The conditional
+  # ranking answers a different question: what a variable adds BEYOND the
+  # variables already adjacent to the outcome. A variable that ranks high
+  # raw and near zero conditional is explained away by its neighbours.
+  information:
+    targets:
+      - OUTCOME DECLINE
+      - OUTCOME EVENT
+
+  # ── Outcome risk for specific participant profiles ────────────────────
+  # Fixes a set of variables and reads the outcome probabilities from the
+  # network, with a bootstrap interval around each.
+  #
+  # Values may be written the way you would say them. A number lands in
+  # whichever bin contains it, and a category is matched by its label.
+  # `AGE: 60` and `AGE: "60"` both mean the age 60. Anything that cannot be
+  # matched is reported by name rather than silently ignored.
+  #
+  # Only name variables that exist in the variant you run this on — a
+  # variable in an excluded layer is not in that network.
+  scenarios:
+    bootstrap_n: 200
+    profiles:
+      "Lower risk profile":
+        AGE: 60
+        SEX: Female
+        RISK SCORE: 35
+        COMORBIDITY COUNT: 0
+        BASELINE TEST SCORE: 29
+      "Higher risk profile":
+        AGE: 80
+        SEX: Male
+        RISK SCORE: 70
+        COMORBIDITY COUNT: 3
+        BASELINE TEST SCORE: 26
+    targets:
+      - {variable: OUTCOME DECLINE, label: Decline}
+      - {variable: OUTCOME EVENT, label: Event}
+
+  # ── Turning one knob ──────────────────────────────────────────────────
+  # Holds a participant profile fixed, moves ONE variable through each of
+  # its states, and plots how the outcome probabilities respond.
+  #
+  # IMPORTANT: `base_profile` must hold only variables UPSTREAM of the
+  # knob. The knob acts on the outcomes through the variables between them;
+  # fixing one of those blocks the pathway, and the result looks flat — not
+  # because the knob does not matter, but because its effect was
+  # conditioned away. The notebook prints a warning if this happens.
+  #
+  # A flat line can also be a real finding: it means the outcome is
+  # insensitive to the knob given the profile.
+  #
+  # These are conditional probabilities under the learned distribution.
+  # They describe participants who differ in the knob, not the effect of
+  # intervening to change it.
+  knob_sweep:
+    knob: MEASUREMENT A
+    base_profile:
+      AGE: 72
+      SEX: Female
+    outcomes:
+      - OUTCOME DECLINE
+      - OUTCOME EVENT
+    bootstrap_n: 200

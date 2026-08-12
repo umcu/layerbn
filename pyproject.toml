@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vcibayes"
-version = "1.0.0"
+version = "1.1.0"
 description = "Layered Bayesian networks for cohort studies: spec-driven structure learning, bootstrap edge stability, and sensitivity analysis"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,9 +26,18 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+# Needed only to run the template notebook; the package itself does not
+# import Jupyter.
+notebook = ["jupyterlab", "pyarrow"]
+
+[project.scripts]
+vcibayes = "vcibayes.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vcibayes"]
+# The spec and notebook templates are shipped inside the package so that
+# `vcibayes init` works from an installed wheel, not only from a checkout.
+artifacts = ["vcibayes/templates/*"]
 
 [tool.ruff]
 line-length = 100
