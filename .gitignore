@@ -149,3 +149,8 @@ docs/_build/
 site/
 config/data_paths.yml
 .env
+
+# interne werkdocumenten
+MIGRATION.md
+PORT_DIFF.md
+SPEC_PLAN.md

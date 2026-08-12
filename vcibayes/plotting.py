@@ -86,7 +86,7 @@ def plot_knob_sweep(sweep_df: pd.DataFrame, meta: dict[str, Any]) -> None:
     """Line + 95%-CI ribbon plot, one panel per outcome.
 
     `sweep_df` and `meta` are the return values of
-    `core.bn_utils.bootstrap_knob_sweep`.
+    `vcibayes.bn_utils.bootstrap_knob_sweep`.
     """
     import matplotlib.pyplot as plt
 

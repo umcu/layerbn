@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from core.discretisation import state_for_value
+from vcibayes.discretisation import state_for_value
 
 # Layer-name substrings that identify semantic roles. Override when your
 # cohort names its layers differently.
@@ -124,7 +124,7 @@ def build_bn(
     layer_map : mapping
         `{layer_name: [variable, ...]}` defining the expert layering.
     type_processor : DiscreteTypeProcessor
-        Constructed via `core.discretisation.make_type_processor`.
+        Constructed via `vcibayes.discretisation.make_type_processor`.
     score : {"K2", "BIC", "BDeu"}
         Structure-learning score.
     fixed_template : optional

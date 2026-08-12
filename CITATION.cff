@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+title: "vcibayes: layered Bayesian networks for cohort studies"
+message: "If you use this software, please cite it using these metadata."
+type: software
+authors:
+  - family-names: Overmars
+    given-names: Malin
+    name-suffix: PhD
+    affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
+repository-code: "https://github.com/umcu/vci-bayes"
+license: MIT
+version: 1.0.0
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.17305046
+    description: "Concept DOI for all versions"
+abstract: >-
+  vcibayes learns knowledge-guided Bayesian networks from cohort data. An
+  expert-defined ordering of variable layers constrains structure learning so
+  arcs may only run downstream through the layers, and non-random dropout is
+  modelled explicitly as a selection layer downstream of the outcomes. The
+  analysis is declared in a YAML spec rather than in code: layers and their
+  order, network variants, discretisation, seed, bootstrap counts, scenario
+  profiles and sensitivity sweeps. Also provides bootstrap edge-stability
+  estimates, mutual-information rankings, and single-knob sensitivity analysis
+  with an overadjustment check.
+keywords:
+  - Bayesian network
+  - structure learning
+  - cohort study
+  - vascular cognitive impairment
+  - pyAgrum

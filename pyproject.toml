@@ -3,18 +3,21 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "vci-bayes"
-version = "0.1.0"
-description = "Shared helpers for VCI Bayesian-network projects (HBC and METAVCI subprojects)"
+name = "vcibayes"
+version = "1.0.0"
+description = "Layered Bayesian networks for cohort studies: spec-driven structure learning, bootstrap edge stability, and sensitivity analysis"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Malin Overmars, PhD" }]
+keywords = ["bayesian-network", "pyagrum", "epidemiology", "cohort-study"]
+
+# pyreadstat is deliberately NOT here: SPSS reading is cohort preprocessing,
+# which lives in the analysis repo, not in the method.
 dependencies = [
     "numpy",
     "pandas>=2",
     "pyyaml",
-    "pyreadstat",
     "scikit-learn",
     "scipy",
     "matplotlib",
@@ -25,7 +28,7 @@ dependencies = [
 dev = ["pytest", "ruff"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["core"]
+packages = ["vcibayes"]
 
 [tool.ruff]
 line-length = 100
