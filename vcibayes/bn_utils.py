@@ -56,45 +56,103 @@ def configure_guided_structure(
     outcomes: Sequence[str],
     *,
     dropout_patterns: Sequence[str] = DEFAULT_DROPOUT_LAYER_PATTERNS,
+    within_layers: bool = True,
+    arcs_between_outcomes: bool = False,
+    selection_parents: str = "outcomes",
+    forbidden_pairs: Iterable[tuple[str, str]] = (),
+    mandatory_pairs: Iterable[tuple[str, str]] = (),
+    no_parents: Iterable[str] = (),
+    no_children: Iterable[str] = (),
 ) -> tuple[list[str], list[str]]:
     """Restrict the learner to arcs that go downward through the layers.
 
-    Rules encoded:
+    Rules always encoded:
+
     * Arcs may only go from an earlier layer to the same or a later layer.
-    * Arcs into a dropout-layer variable are only allowed from an outcome
-      (dropout is downstream of outcomes, not caused by covariates).
-    * Arcs between outcomes themselves are forbidden.
+
+    Rules that the keyword arguments control, whose defaults reproduce the
+    behaviour this function had before they existed:
+
+    * `within_layers` — whether two variables in the same layer may be
+      connected. False makes each layer internally independent.
+    * `arcs_between_outcomes` — whether one outcome may point at another.
+    * `selection_parents` — `"outcomes"` allows arcs into a dropout-layer
+      variable only from an outcome, on the grounds that dropout follows
+      the outcomes rather than the covariates. `"any"` drops that
+      restriction and lets the layer order alone decide.
+
+    Additional structural knowledge:
+
+    * `forbidden_pairs` — `(parent, child)` arcs to rule out even though
+      the layer order permits them.
+    * `mandatory_pairs` — arcs the learner must include. These must be
+      consistent with everything above; a pair that is both mandatory and
+      forbidden raises `ValueError` rather than reaching pyAgrum, whose own
+      message does not say which pair was at fault.
+    * `no_parents` / `no_children` — variables pinned as roots or sinks.
 
     Returns `(dropout_vars, true_outcomes)` for the caller to reuse when
     adding hard outcome→dropout arcs after learning.
     """
+    if selection_parents not in ("outcomes", "any"):
+        raise ValueError(
+            f"selection_parents must be 'outcomes' or 'any', got {selection_parents!r}")
+
     layer_keys = list(layer_map_filtered.keys())
     dropout_vars = [v for k in layer_keys if _match_any(k, dropout_patterns)
                     for v in layer_map_filtered[k]]
     true_outcomes = [v for v in outcomes if v not in dropout_vars]
 
+    keep = set(variables_to_keep)
+    forbidden_pairs = set(forbidden_pairs)
+    mandatory_pairs = set(mandatory_pairs)
+    no_parents = set(no_parents)
+    no_children = set(no_children)
+
+    conflict = forbidden_pairs & mandatory_pairs
+    if conflict:
+        raise ValueError(
+            f"these arcs are both mandatory and forbidden: {sorted(conflict)}")
+
     allowed_arcs: list[tuple[str, str]] = []
     for i, from_key in enumerate(layer_keys):
-        for to_key in layer_keys[i:]:
+        for j, to_key in enumerate(layer_keys[i:], start=i):
+            if i == j and not within_layers:
+                continue
             for parent, child in product(layer_map_filtered[from_key],
                                           layer_map_filtered[to_key]):
-                if child in dropout_vars:
+                if child in dropout_vars and selection_parents == "outcomes":
                     if parent in outcomes:
                         allowed_arcs.append((parent, child))
                     continue
-                if parent in variables_to_keep and child in variables_to_keep:
+                if parent in keep and child in keep:
                     allowed_arcs.append((parent, child))
 
-    allowed_set = set(allowed_arcs)
+    allowed_set = set(allowed_arcs) - forbidden_pairs
     for parent in variables_to_keep:
         for child in variables_to_keep:
             if parent != child and (parent, child) not in allowed_set:
                 learner.addForbiddenArc(parent, child)
 
-    for parent in true_outcomes:
-        for child in true_outcomes:
-            if parent != child:
-                learner.addForbiddenArc(parent, child)
+    if not arcs_between_outcomes:
+        for parent in true_outcomes:
+            for child in true_outcomes:
+                if parent != child:
+                    learner.addForbiddenArc(parent, child)
+
+    # Node-level constraints are applied after the pairwise ones so that a
+    # variable pinned as a root or a sink stays that way regardless of what
+    # the layer order allowed.
+    for variable in sorted(no_parents & keep):
+        learner.addNoParentNode(variable)
+    for variable in sorted(no_children & keep):
+        learner.addNoChildrenNode(variable)
+
+    # Mandatory arcs come last: pyAgrum resolves them against the
+    # constraints already registered.
+    for parent, child in sorted(mandatory_pairs):
+        if parent in keep and child in keep:
+            learner.addMandatoryArc(parent, child)
 
     return dropout_vars, true_outcomes
 
@@ -115,6 +173,13 @@ def build_bn(
     max_indegree: int = 5,
     outcome_patterns: Sequence[str] = DEFAULT_OUTCOME_LAYER_PATTERNS,
     dropout_patterns: Sequence[str] = DEFAULT_DROPOUT_LAYER_PATTERNS,
+    within_layers: bool = True,
+    arcs_between_outcomes: bool = False,
+    selection_parents: str = "outcomes",
+    forbidden_pairs: Iterable[tuple[str, str]] = (),
+    mandatory_pairs: Iterable[tuple[str, str]] = (),
+    no_parents: Iterable[str] = (),
+    no_children: Iterable[str] = (),
 ) -> Any:
     """Learn a layered Bayesian network with pyAgrum.
 
@@ -141,11 +206,21 @@ def build_bn(
     use_smoothing : bool
         Laplace prior. Automatically on for BIC. Turn on elsewhere when
         rare state combinations trigger inference errors.
+    within_layers, arcs_between_outcomes, selection_parents
+        The three structural conventions. See `configure_guided_structure`;
+        the defaults reproduce the behaviour that used to be fixed in code.
+    forbidden_pairs, mandatory_pairs, no_parents, no_children
+        Extra structural knowledge, as `(parent, child)` pairs and variable
+        names. `vcibayes.spec` builds these from a spec's `constraints`
+        block, and `vcibayes.analysis.Analysis` passes them in for you.
 
     Notes
     -----
     * When `enforce_structure=True`, `configure_guided_structure` restricts
-      arcs to obey the layer order.
+      arcs to obey the layer order and any constraints given.
+    * When `enforce_structure=False` every constraint is skipped, including
+      the layer order. That is a genuinely unconstrained search, useful as a
+      comparison but not as the analysis.
     * After learning, hard outcome→dropout arcs are added if not already
       present, so scenario inference always sees the dropout mechanism.
     """
@@ -193,6 +268,13 @@ def build_bn(
         dropout_vars, true_outcomes = configure_guided_structure(
             learner, layer_map_filtered, variables_to_keep, outcomes,
             dropout_patterns=dropout_patterns,
+            within_layers=within_layers,
+            arcs_between_outcomes=arcs_between_outcomes,
+            selection_parents=selection_parents,
+            forbidden_pairs=forbidden_pairs,
+            mandatory_pairs=mandatory_pairs,
+            no_parents=no_parents,
+            no_children=no_children,
         )
     else:
         # Same pair `configure_guided_structure` would have returned, without

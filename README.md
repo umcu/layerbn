@@ -30,7 +30,7 @@ of UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
 Requires Python 3.11 or newer.
 
 ```bash
-pip install "vcibayes[notebook] @ git+https://github.com/umcu/vci-bayes@v1.1.0"
+pip install "vcibayes[notebook] @ git+https://github.com/umcu/vci-bayes@v1.2.0"
 vcibayes init my-study
 cd my-study
 jupyter lab analysis.ipynb
@@ -41,7 +41,7 @@ reader. Leave it off if you already have Jupyter, or if you are scripting
 rather than using the notebook:
 
 ```bash
-pip install "git+https://github.com/umcu/vci-bayes@v1.1.0"
+pip install "git+https://github.com/umcu/vci-bayes@v1.2.0"
 ```
 
 The quotes matter: without them the shell tries to interpret the square
@@ -82,6 +82,8 @@ itself in `.bifxml`, which can be reopened without repeating the analysis.
 example; the file `vcibayes init` writes is fully commented.
 
 ```yaml
+spec_version: 2
+
 layers:                        # THE ORDER OF THIS LIST IS THE CONSTRAINT
   - name: "L0 – Demographics"
     role: covariate
@@ -115,6 +117,59 @@ your endpoints, and arcs between endpoints are forbidden so that one is never
 reported as a cause of another. A `selection` layer holds dropout: arcs into it
 are allowed only from outcomes, and every outcome is connected to it after
 learning.
+
+### Constraints beyond the layer order
+
+The layer order rules out every upstream arc. When you need to say something
+more specific, an optional `constraints` block does it:
+
+```yaml
+constraints:
+  forbid:                                     # rule an arc out
+    - {from: AGE, to: EDUCATION YEARS}
+    - {from_layer: "L1 – Risk", to_layer: "L4 – Function"}
+  require:                                    # insist on an arc
+    - {from: SEX, to: OUTCOME EVENT}
+  no_parents:  [AGE]                          # pin a root
+  no_children: [DROPOUT REASON]               # pin a sink
+
+  within_layers: true                         # arcs inside one layer
+  arcs_between_outcomes: false                # one endpoint causing another
+  selection_parents: outcomes                 # or: any
+```
+
+Either end of a rule may name a variable or a whole layer, and the two can be
+mixed, so one rule can stand for many arcs.
+
+The last three settings are the conventions that were previously fixed in the
+code: whether variables in the same layer may be connected, whether one
+outcome may point at another, and whether anything other than an outcome may
+point into the dropout layer. The values shown are the defaults, so a spec
+that omits the block behaves exactly as before.
+
+**Constraints can only narrow.** Nothing here can license an arc that runs
+against the layer order, so the `layers` list on its own stays a complete
+statement of what is possible. Requiring an upstream arc is an error that
+tells you to reorder the layers instead:
+
+```
+INVALID: spec.yml: constraints.require[0]: OUTCOME EVENT -> AGE requires
+'OUTCOME EVENT' -> 'AGE', but 'OUTCOME EVENT' is in layer 5 and 'AGE' is in
+the earlier layer 0. Constraints may only narrow what the layer order
+allows. Reorder `layers` if this arc should be possible.
+```
+
+Rules are also checked against each other, so an arc that is both required and
+forbidden is reported rather than passed to the learner.
+
+Using `constraints` requires an explicit `spec_version: 2` at the top of the
+file. Version 1 specs remain valid and load unchanged, and a spec without
+constraints need not declare a version at all.
+
+The declaration has to be explicit rather than left to default, because a
+loader older than version 2 assumes version 1. Given an undeclared file it
+would accept it, ignore the constraints, and learn an unconstrained network
+without reporting anything.
 
 To check a spec without opening a notebook:
 
@@ -182,7 +237,7 @@ spec yourself.
 | Module | Contents |
 | --- | --- |
 | `analysis.py` | `Analysis`, the spec-driven entry point used by the notebook |
-| `spec.py` | `load_spec`, `Spec`, `check_against_dataframe` |
+| `spec.py` | `load_spec`, `Spec`, `Constraints`, `check_against_dataframe` |
 | `bn_utils.py` | `build_bn`, `bootstrap_edge_frequencies`, `bootstrap_scenario_risks`, `bootstrap_knob_sweep` |
 | `discretisation.py` | `make_type_processor`, `state_for_value`, `describe_template` |
 | `inference.py` | `mutual_information_scores`, `conditional_mutual_information_scores` |

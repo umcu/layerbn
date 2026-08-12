@@ -28,7 +28,7 @@
 #   5. Adjust the analyses at the bottom, or delete the ones you do not
 #      want — they are all optional.
 
-spec_version: 1
+spec_version: 2
 name: my-study
 description: >
   One or two sentences describing the analysis. This is free text; it
@@ -124,6 +124,71 @@ layers:
     role: selection
     variables:
       - DROPOUT REASON
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  CONSTRAINTS — optional, for control beyond the layer order
+# ════════════════════════════════════════════════════════════════════════
+#
+# The layer order above already forbids every upstream arc. This block is
+# for the cases it cannot express: a particular arc you want ruled out, one
+# you want to insist on, or a different opinion about the three conventions
+# listed at the bottom.
+#
+# CONSTRAINTS CAN ONLY NARROW. Nothing here can license an arc that runs
+# against the layer order, so the `layers` list on its own always remains a
+# complete statement of what is possible. If you need an arc the ordering
+# forbids, the ordering is what should change. Requiring such an arc is an
+# error, and the message says so.
+#
+# Every rule is validated when the spec is read, including against the
+# other rules: an arc that is both required and forbidden is reported
+# rather than passed to the learner.
+#
+# The whole block is optional. Delete it and the analysis behaves exactly
+# as it would have before constraints existed.
+
+# constraints:
+#
+#   # Arcs the layer order permits but you want ruled out. Each end is
+#   # either a variable (`from`, `to`) or a whole layer (`from_layer`,
+#   # `to_layer`), and the two can be mixed. A layer stands for every
+#   # variable in it, so one rule can cover many arcs.
+#   forbid:
+#     - {from: AGE, to: EDUCATION YEARS}
+#     - {from_layer: "L1 – Risk factors", to_layer: "L4 – Baseline function"}
+#     - {from: MARKER 1, to_layer: "L5 – Outcomes"}
+#
+#   # Arcs the learner must include, whatever the data say. Use sparingly:
+#   # a required arc is an assertion about the world, not a finding, and it
+#   # should be defensible in a methods section.
+#   require:
+#     - {from: SEX, to: OUTCOME EVENT}
+#
+#   # Variables pinned as roots (never caused by anything in the network)
+#   # or as sinks (never a cause of anything).
+#   no_parents:  [AGE, SEX]
+#   no_children: [DROPOUT REASON]
+#
+#   # ── The three conventions that used to be fixed in code ──────────────
+#   # The values shown are the defaults, so leaving them out changes
+#   # nothing.
+#
+#   # May two variables in the same layer be connected? False makes each
+#   # layer internally independent, which suits a layer of items that are
+#   # measured together but not thought to influence each other.
+#   within_layers: true
+#
+#   # May one outcome point at another? Normally false, so that no endpoint
+#   # is reported as a cause of another endpoint.
+#   arcs_between_outcomes: false
+#
+#   # What may point into the selection layer. `outcomes` reflects the
+#   # usual assumption that dropout follows the outcomes rather than the
+#   # covariates. `any` drops that and lets the layer order alone decide,
+#   # which is what you want if participants leave for reasons unrelated to
+#   # the endpoints, such as moving away.
+#   selection_parents: outcomes
 
 
 # ════════════════════════════════════════════════════════════════════════

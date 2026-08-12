@@ -9,7 +9,7 @@ authors:
     affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
 repository-code: "https://github.com/umcu/vci-bayes"
 license: MIT
-version: 1.1.0
+version: 1.2.0
 date-released: "2026-08-12"
 identifiers:
   - type: doi
@@ -22,11 +22,14 @@ abstract: >-
   further down that order, so the recovered structure respects the assumed
   direction of influence. Dropout is represented as a selection layer
   downstream of the outcomes, allowing non-random loss to follow-up to be
-  modelled rather than imputed away. The analysis is declared in a YAML
-  specification rather than in code, covering the layers and their order,
-  network variants, discretisation, random seed, bootstrap counts, participant
-  profiles and sensitivity sweeps, so that it can be published alongside a
-  manuscript. The package also provides bootstrap estimates of arc stability,
+  modelled rather than imputed away. Beyond the layer ordering, individual
+  arcs may be forbidden or required, and variables may be pinned as roots or
+  sinks; such constraints may only narrow what the ordering permits, so the
+  ordering remains a complete statement of the assumed structure. The
+  analysis is declared in a YAML specification rather than in code, covering
+  the layers and their order, the arc constraints, network variants,
+  discretisation, random seed, bootstrap counts, participant profiles and
+  sensitivity sweeps, so that it can be published alongside a manuscript. The package also provides bootstrap estimates of arc stability,
   mutual-information rankings of variables against each outcome, and
   single-variable sensitivity analysis with a check for conditioning on
   mediators.

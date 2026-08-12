@@ -198,6 +198,7 @@ class Analysis:
         against the strings "Outcomes" and "Dropout".
         """
         variant = self.spec.variant(variant_name)
+        constraints = self.spec.constraints
         kwargs: dict[str, Any] = {
             "score": self.spec.model.score,
             "use_tabu": self.spec.model.use_tabu,
@@ -205,6 +206,16 @@ class Analysis:
             "exclude_layers": list(variant.exclude_layers),
             "outcome_patterns": self.spec.outcome_patterns,
             "dropout_patterns": self.spec.dropout_patterns,
+            # From `constraints` in the spec. Omitting these would silently
+            # fall back to the built-in conventions, which is exactly the
+            # failure this class exists to prevent.
+            "within_layers": constraints.within_layers,
+            "arcs_between_outcomes": constraints.arcs_between_outcomes,
+            "selection_parents": constraints.selection_parents,
+            "forbidden_pairs": self.spec.forbidden_pairs,
+            "mandatory_pairs": self.spec.mandatory_pairs,
+            "no_parents": constraints.no_parents,
+            "no_children": constraints.no_children,
         }
         kwargs.update(overrides)
         return kwargs
@@ -681,6 +692,26 @@ class Analysis:
                         if variant.exclude_layers else "")
             lines.append(f"             {variant.name}: "
                          f"outcomes {list(variant.outcomes)}{excluded}")
+
+        constraints = self.spec.constraints
+        lines.append("Arcs:")
+        lines.append("             only downstream through the layer order above")
+        lines.append(f"             within a layer: "
+                     f"{'allowed' if constraints.within_layers else 'forbidden'}")
+        lines.append(f"             between outcomes: "
+                     f"{'allowed' if constraints.arcs_between_outcomes else 'forbidden'}")
+        if self.spec.layers_with_role("selection"):
+            lines.append(f"             into the selection layer: from "
+                         f"{constraints.selection_parents}")
+        for label, pairs in (("forbidden", self.spec.forbidden_pairs),
+                             ("required", self.spec.mandatory_pairs)):
+            if pairs:
+                lines.append(f"             {label} ({len(pairs)}):")
+                lines += [f"               {p} -> {c}" for p, c in sorted(pairs)]
+        if constraints.no_parents:
+            lines.append(f"             no parents: {list(constraints.no_parents)}")
+        if constraints.no_children:
+            lines.append(f"             no children: {list(constraints.no_children)}")
         if self.data_warnings:
             lines.append("Warnings:")
             lines += [f"             - {w}" for w in self.data_warnings]

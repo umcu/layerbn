@@ -35,4 +35,4 @@ preprocessing, including outcome derivation, censoring and imputation, lives
 in the analysis repository.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

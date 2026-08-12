@@ -1,10 +1,11 @@
 """Analysis-spec loading and validation.
 
 A project's `spec.yml` declares *what the analysis is* — the ordered layers
-and their variables, which layers each network variant excludes, the
-discretisation, the seed and bootstrap counts, the scenario profiles and the
-knob sweep. It deliberately holds no paths: machine-specific locations stay
-in `config.yml`, so a spec is shareable as-is.
+and their variables, any constraints on which arcs may be drawn, which
+layers each network variant excludes, the discretisation, the seed and
+bootstrap counts, the scenario profiles and the knob sweep. It deliberately
+holds no paths: machine-specific locations stay in `config.yml`, so a spec
+is shareable as-is.
 
 The spec starts at the analysis-ready dataframe. Preprocessing is not
 expressible here and is not meant to be.
@@ -13,6 +14,8 @@ expressible here and is not meant to be.
     spec = load_spec("spec.yml")
     spec.layer_map          # {layer name: [variable, ...]}, in spec order
     spec.variant("joint")   # outcomes + exclude_layers for one network
+    spec.forbidden_pairs    # (parent, child) arcs ruled out by constraints
+    spec.mandatory_pairs    # (parent, child) arcs the learner must include
 
 Validation is eager and the errors name the offending key by its path in the
 file (`layers[3].variables[1]`), so a typo is found before a 40-minute
@@ -26,10 +29,16 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
-SPEC_VERSION = 1
+# Version 2 added the optional `constraints` block. A version 1 spec is still
+# valid and loads unchanged. A spec that uses `constraints` must declare
+# version 2, so that an older loader refuses it rather than silently ignoring
+# the constraints and learning an unconstrained network.
+SPEC_VERSION = 2
+SUPPORTED_VERSIONS = (1, 2)
 
 ROLES = ("covariate", "outcome", "selection")
 SCORES = ("K2", "BIC", "BDEU")
+SELECTION_PARENTS = ("outcomes", "any")
 
 
 class SpecError(ValueError):
@@ -140,6 +149,66 @@ class KnobSweep:
 
 
 @dataclass(frozen=True)
+class ArcRule:
+    """One arc rule. Each end names either a variable or a whole layer.
+
+    A layer on either end expands to every variable in it, so one rule can
+    stand for many arcs.
+    """
+
+    from_variable: str | None = None
+    from_layer: str | None = None
+    to_variable: str | None = None
+    to_layer: str | None = None
+
+    def tails(self, layer_map: Mapping[str, Sequence[str]]) -> list[str]:
+        if self.from_variable is not None:
+            return [self.from_variable]
+        return list(layer_map.get(self.from_layer or "", []))
+
+    def heads(self, layer_map: Mapping[str, Sequence[str]]) -> list[str]:
+        if self.to_variable is not None:
+            return [self.to_variable]
+        return list(layer_map.get(self.to_layer or "", []))
+
+    def pairs(self, layer_map: Mapping[str, Sequence[str]]) -> set[tuple[str, str]]:
+        """Every `(parent, child)` this rule covers. Self-pairs are dropped."""
+        return {
+            (tail, head)
+            for tail in self.tails(layer_map)
+            for head in self.heads(layer_map)
+            if tail != head
+        }
+
+    def describe(self) -> str:
+        tail = self.from_variable or f"layer {self.from_layer!r}"
+        head = self.to_variable or f"layer {self.to_layer!r}"
+        return f"{tail} -> {head}"
+
+
+@dataclass(frozen=True)
+class Constraints:
+    """Structural knowledge beyond the layer order.
+
+    Constraints may only narrow what the layer order already permits. They
+    cannot license an arc that runs upstream, so the layer list on its own
+    remains a complete statement of what is possible.
+
+    `within_layers`, `arcs_between_outcomes` and `selection_parents` default
+    to the behaviour the learner had before constraints existed, so a spec
+    that omits this block is unaffected.
+    """
+
+    forbid: tuple[ArcRule, ...] = ()
+    require: tuple[ArcRule, ...] = ()
+    no_parents: tuple[str, ...] = ()
+    no_children: tuple[str, ...] = ()
+    within_layers: bool = True
+    arcs_between_outcomes: bool = False
+    selection_parents: str = "outcomes"
+
+
+@dataclass(frozen=True)
 class Spec:
     """A validated analysis spec."""
 
@@ -155,6 +224,37 @@ class Spec:
     information_targets: tuple[str, ...]
     scenarios: Scenarios
     knob_sweep: KnobSweep
+    constraints: Constraints = field(default_factory=Constraints)
+
+    # -- constraint views --------------------------------------------------
+
+    @property
+    def forbidden_pairs(self) -> set[tuple[str, str]]:
+        """Every `(parent, child)` ruled out by `constraints.forbid`."""
+        return {
+            pair
+            for rule in self.constraints.forbid
+            for pair in rule.pairs(self.layer_map)
+        }
+
+    @property
+    def mandatory_pairs(self) -> set[tuple[str, str]]:
+        """Every `(parent, child)` demanded by `constraints.require`."""
+        return {
+            pair
+            for rule in self.constraints.require
+            for pair in rule.pairs(self.layer_map)
+        }
+
+    def layer_index(self, variable: str) -> int:
+        """Position of a variable's layer in the ordering."""
+        for i, layer in enumerate(self.layers):
+            if variable in layer.variables:
+                return i
+        raise SpecError(
+            f"{self.source}: variable {variable!r} is not in any layer."
+            f"{_did_you_mean(variable, self.variables)}"
+        )
 
     # -- layer views -------------------------------------------------------
 
@@ -231,9 +331,27 @@ def load_spec(path: str | Path) -> Spec:
         _fail(source, "<root>", "file must contain a mapping at the top level")
 
     version = raw.get("spec_version", SPEC_VERSION)
-    if version != SPEC_VERSION:
+    if version not in SUPPORTED_VERSIONS:
         _fail(source, "spec_version",
-              f"unsupported version {version!r}; this loader understands {SPEC_VERSION}")
+              f"unsupported version {version!r}; this loader understands "
+              f"{list(SUPPORTED_VERSIONS)}")
+    if "constraints" in raw:
+        # The declaration must be explicit, not merely defaulted. An older
+        # loader defaults the version to 1 and would otherwise accept a file
+        # with no `spec_version`, ignore its constraints, and learn an
+        # unconstrained network while appearing to succeed.
+        if "spec_version" not in raw:
+            _fail(source, "spec_version",
+                  "this file uses `constraints` but does not declare a version. "
+                  "Add `spec_version: 2` at the top. Without it, a loader older "
+                  "than version 2 assumes version 1, ignores the constraints and "
+                  "learns an unconstrained network without reporting anything.")
+        if version < 2:
+            _fail(source, "spec_version",
+                  f"`constraints` was added in spec version 2, but this file "
+                  f"declares version {version}. Set `spec_version: 2`. Older "
+                  "loaders must reject the file rather than silently ignore the "
+                  "constraints and learn an unconstrained network.")
 
     layers = _parse_layers(raw, source)
     known_vars = [v for layer in layers for v in layer.variables]
@@ -255,8 +373,10 @@ def load_spec(path: str | Path) -> Spec:
         information_targets=_parse_information(raw, source, known_vars),
         scenarios=_parse_scenarios(raw, source, known_vars),
         knob_sweep=_parse_knob_sweep(raw, source, known_vars),
+        constraints=_parse_constraints(raw, source, layer_names, known_vars),
     )
     _check_roles(spec)
+    _check_constraints(spec)
     return spec
 
 
@@ -483,6 +603,177 @@ def _parse_knob_sweep(raw: Mapping[str, Any], source: str,
         boot = _as_int(boot, source, f"{key}.bootstrap_n", minimum=1)
     return KnobSweep(knob=knob, base_profile=dict(base),
                      outcomes=tuple(outcomes), bootstrap_n=boot)
+
+
+def _parse_arc_rule(item: Any, source: str, key: str,
+                    layer_names: Sequence[str], known_vars: Sequence[str]) -> ArcRule:
+    """Parse one `{from|from_layer: ..., to|to_layer: ...}` entry."""
+    item = _as_mapping(item, source, key)
+
+    unknown = set(item) - {"from", "from_layer", "to", "to_layer"}
+    if unknown:
+        _fail(source, key,
+              f"unknown key(s) {sorted(unknown)}; an arc rule takes exactly "
+              "one of `from`/`from_layer` and one of `to`/`to_layer`.")
+
+    def one_end(var_key: str, layer_key: str) -> tuple[str | None, str | None]:
+        has_var, has_layer = var_key in item, layer_key in item
+        if has_var and has_layer:
+            _fail(source, key,
+                  f"give either `{var_key}` or `{layer_key}`, not both.")
+        if not has_var and not has_layer:
+            _fail(source, key, f"missing `{var_key}` or `{layer_key}`.")
+        if has_var:
+            name = _as_str(item[var_key], source, f"{key}.{var_key}")
+            if name not in known_vars:
+                _fail(source, f"{key}.{var_key}",
+                      f"{name!r} is not a variable in any layer."
+                      f"{_did_you_mean(name, known_vars)}")
+            return name, None
+        name = _as_str(item[layer_key], source, f"{key}.{layer_key}")
+        if name not in layer_names:
+            _fail(source, f"{key}.{layer_key}",
+                  f"{name!r} is not a declared layer."
+                  f"{_did_you_mean(name, layer_names)}")
+        return None, name
+
+    from_variable, from_layer = one_end("from", "from_layer")
+    to_variable, to_layer = one_end("to", "to_layer")
+    return ArcRule(from_variable=from_variable, from_layer=from_layer,
+                   to_variable=to_variable, to_layer=to_layer)
+
+
+def _parse_constraints(raw: Mapping[str, Any], source: str,
+                       layer_names: Sequence[str],
+                       known_vars: Sequence[str]) -> Constraints:
+    block = _as_mapping(raw.get("constraints", {}), source, "constraints")
+    if not block:
+        return Constraints()
+
+    unknown = set(block) - {"forbid", "require", "no_parents", "no_children",
+                            "within_layers", "arcs_between_outcomes",
+                            "selection_parents"}
+    if unknown:
+        _fail(source, "constraints", f"unknown key(s) {sorted(unknown)}")
+
+    rules: dict[str, tuple[ArcRule, ...]] = {}
+    for name in ("forbid", "require"):
+        items = _as_list(block.get(name, []), source, f"constraints.{name}")
+        rules[name] = tuple(
+            _parse_arc_rule(item, source, f"constraints.{name}[{i}]",
+                            layer_names, known_vars)
+            for i, item in enumerate(items)
+        )
+
+    nodes: dict[str, tuple[str, ...]] = {}
+    for name in ("no_parents", "no_children"):
+        items = _as_list(block.get(name, []), source, f"constraints.{name}")
+        cleaned = []
+        for i, item in enumerate(items):
+            var = _as_str(item, source, f"constraints.{name}[{i}]")
+            if var not in known_vars:
+                _fail(source, f"constraints.{name}[{i}]",
+                      f"{var!r} is not a variable in any layer."
+                      f"{_did_you_mean(var, known_vars)}")
+            cleaned.append(var)
+        nodes[name] = tuple(cleaned)
+
+    selection_parents = _as_str(
+        block.get("selection_parents", "outcomes"), source,
+        "constraints.selection_parents")
+    if selection_parents not in SELECTION_PARENTS:
+        _fail(source, "constraints.selection_parents",
+              f"expected one of {list(SELECTION_PARENTS)}, got "
+              f"{selection_parents!r}.{_did_you_mean(selection_parents, SELECTION_PARENTS)}")
+
+    return Constraints(
+        forbid=rules["forbid"],
+        require=rules["require"],
+        no_parents=nodes["no_parents"],
+        no_children=nodes["no_children"],
+        within_layers=_as_bool(block.get("within_layers", True), source,
+                               "constraints.within_layers"),
+        arcs_between_outcomes=_as_bool(block.get("arcs_between_outcomes", False),
+                                       source, "constraints.arcs_between_outcomes"),
+        selection_parents=selection_parents,
+    )
+
+
+def _check_constraints(spec: Spec) -> None:
+    """Reject constraints that contradict the layer order or each other.
+
+    Constraints may only narrow what the layer order permits. A required arc
+    that runs upstream is an error rather than an exception, because the
+    alternative would mean the layer list no longer describes what the
+    learner can do.
+    """
+    source = spec.source
+    constraints = spec.constraints
+    forbidden = spec.forbidden_pairs
+    outcome_layers = set(spec.layers_with_role("outcome"))
+    selection_layers = set(spec.layers_with_role("selection"))
+    outcome_vars = {v for layer in spec.layers if layer.name in outcome_layers
+                    for v in layer.variables}
+    selection_vars = {v for layer in spec.layers if layer.name in selection_layers
+                      for v in layer.variables}
+
+    for i, rule in enumerate(constraints.require):
+        key = f"constraints.require[{i}]"
+
+        for tail, head in sorted(rule.pairs(spec.layer_map)):
+            tail_at, head_at = spec.layer_index(tail), spec.layer_index(head)
+
+            if tail_at > head_at:
+                _fail(source, key,
+                      f"{rule.describe()} requires {tail!r} -> {head!r}, but "
+                      f"{tail!r} is in layer {tail_at} "
+                      f"({spec.layers[tail_at].name!r}) and {head!r} is in the "
+                      f"earlier layer {head_at} ({spec.layers[head_at].name!r}). "
+                      "Constraints may only narrow what the layer order allows. "
+                      "Reorder `layers` if this arc should be possible.")
+
+            if tail_at == head_at and not constraints.within_layers:
+                _fail(source, key,
+                      f"{rule.describe()} requires {tail!r} -> {head!r} inside "
+                      f"layer {spec.layers[tail_at].name!r}, but "
+                      "`constraints.within_layers` is false.")
+
+            if (tail, head) in forbidden:
+                _fail(source, key,
+                      f"{tail!r} -> {head!r} is both required and forbidden. "
+                      "Remove it from one of the two lists.")
+
+            if not constraints.arcs_between_outcomes and \
+                    tail in outcome_vars and head in outcome_vars:
+                _fail(source, key,
+                      f"{rule.describe()} requires an arc between the outcomes "
+                      f"{tail!r} and {head!r}, but "
+                      "`constraints.arcs_between_outcomes` is false.")
+
+            if constraints.selection_parents == "outcomes" and \
+                    head in selection_vars and tail not in outcome_vars:
+                _fail(source, key,
+                      f"{rule.describe()} requires {tail!r} -> {head!r}, but "
+                      f"{head!r} is in the selection layer and "
+                      "`constraints.selection_parents` is 'outcomes', so only "
+                      "outcomes may point into it.")
+
+            if head in constraints.no_parents:
+                _fail(source, key,
+                      f"{head!r} is required to have the parent {tail!r} but "
+                      "also appears in `constraints.no_parents`.")
+            if tail in constraints.no_children:
+                _fail(source, key,
+                      f"{tail!r} is required to have the child {head!r} but "
+                      "also appears in `constraints.no_children`.")
+
+    overlap = sorted(set(constraints.no_parents) & set(constraints.no_children))
+    for var in overlap:
+        if len(spec.variables) > 1:
+            _fail(source, "constraints.no_children",
+                  f"{var!r} is in both `no_parents` and `no_children`, so it "
+                  "could take no arc at all and would be an isolated node. "
+                  "Remove it from a layer instead if that is what you mean.")
 
 
 # ---------------------------------------------------------------------------

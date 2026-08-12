@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vcibayes"
-version = "1.1.0"
+version = "1.2.0"
 description = "Layered Bayesian networks for cohort studies: spec-driven structure learning, bootstrap edge stability, and sensitivity analysis"
 readme = "README.md"
 requires-python = ">=3.11"

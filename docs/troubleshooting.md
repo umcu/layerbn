@@ -36,6 +36,56 @@ outcomes.
 The sweep varies the knob across all of its states, so fixing it at one value
 would contradict the whole point. Remove it from `base_profile`.
 
+### `SpecError: constraints.require[0]: ... is in the earlier layer 0. Constraints may only narrow what the layer order allows.`
+
+You required an arc that runs upstream. Constraints can only restrict what the
+layer order already permits, never extend it, so that the `layers` list stays
+a complete statement of what the learner may do.
+
+If the arc should be possible, the layer order is what to change. If two
+variables genuinely influence each other in both directions, no acyclic
+network can represent that, and the usual fix is to put them in the same layer
+and let `within_layers` allow a single arc in whichever direction the data
+support.
+
+### `SpecError: constraints.require[0]: 'A' -> 'B' is both required and forbidden.`
+
+Two rules contradict each other. Remember that a rule naming a layer expands
+to every variable in it, so a broad `forbid` on a layer pair can easily catch
+an arc a narrower `require` asked for. Remove it from one of the two lists, or
+narrow the layer rule to specific variables.
+
+### `SpecError: constraints.require[0]: ... requires an arc between the outcomes ... but constraints.arcs_between_outcomes is false.`
+
+By default no endpoint may be a cause of another endpoint. If you genuinely
+intend one outcome to predict another, set `arcs_between_outcomes: true`. Think
+about whether the second outcome then belongs in a later layer instead.
+
+### `SpecError: constraints.require[0]: ... is in the selection layer and constraints.selection_parents is 'outcomes'.`
+
+Only outcomes may point into the dropout layer under the default. Set
+`selection_parents: any` if participants in your cohort leave for reasons
+unrelated to the endpoints, such as moving away, and you want covariates to be
+able to explain dropout.
+
+### `SpecError: spec_version: ... constraints was added in spec version 2, but this file declares version 1.`
+
+Set `spec_version: 2`.
+
+### `SpecError: spec_version: this file uses constraints but does not declare a version.`
+
+Add `spec_version: 2` at the top. Leaving it out is not the same as declaring
+it: a loader older than version 2 assumes version 1, so an undeclared file
+would be accepted, its constraints ignored, and an unconstrained network
+learned without anything being reported. The declaration is what makes an old
+loader refuse the file instead.
+
+### `ValueError: these arcs are both mandatory and forbidden: [...]`
+
+The same contradiction as above, but raised from `build_bn` rather than the
+spec loader, which means the constraints were passed directly in code. Loading
+them from a spec catches this earlier and names the offending key.
+
 ### `SpecError: spec file not found: spec.yml`
 
 The path is relative to the directory the notebook or the shell is running in,

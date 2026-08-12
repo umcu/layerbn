@@ -71,6 +71,27 @@ def _check(path: Path) -> int:
         print(f"                   {', '.join(layer.variables)}")
     print(f"  variants    {[v.name for v in spec.variants]}")
     print(f"  bootstrap   {spec.bootstrap_n} resamples")
+
+    constraints = spec.constraints
+    print("  arcs        only downstream through the layer order above")
+    print(f"                within a layer: "
+          f"{'allowed' if constraints.within_layers else 'forbidden'}")
+    print(f"                between outcomes: "
+          f"{'allowed' if constraints.arcs_between_outcomes else 'forbidden'}")
+    if spec.layers_with_role("selection"):
+        print(f"                into the selection layer: from "
+              f"{constraints.selection_parents}")
+    for label, pairs in (("forbidden", spec.forbidden_pairs),
+                         ("required", spec.mandatory_pairs)):
+        if pairs:
+            print(f"                {label} ({len(pairs)}):")
+            for parent, child in sorted(pairs):
+                print(f"                  {parent} -> {child}")
+    if constraints.no_parents:
+        print(f"                no parents: {list(constraints.no_parents)}")
+    if constraints.no_children:
+        print(f"                no children: {list(constraints.no_children)}")
+
     print("\nArcs may only run from a layer to itself or to one below it in "
           "that list.\nIf the order above is not the order you would defend, "
           "reorder `layers` in the spec.")
