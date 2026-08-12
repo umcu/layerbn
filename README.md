@@ -1,6 +1,6 @@
 # vcibayes
 
-![VCI-Bayes Logo](logo-vci-bayes.png)
+<img src="logo-vci-bayes.png" alt="VCI-Bayes" width="380">
 
 **vcibayes** learns Bayesian networks from cohort data under a structure that
 you specify rather than one discovered from scratch.
@@ -21,7 +21,7 @@ Developed in the [Vascular Cognitive Impairment (VCI) research
 group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
 of UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17305046.svg)](https://doi.org/10.5281/zenodo.17305046)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17302710.svg)](https://doi.org/10.5281/zenodo.17302710)
 
 ---
 
