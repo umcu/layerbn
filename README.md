@@ -1,9 +1,6 @@
 # vcibayes
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="logo-vci-bayes-dark.png">
-  <img src="logo-vci-bayes.png" alt="VCI-Bayes" width="380">
-</picture>
+<img src="logo-vci-bayes.png" alt="VCI-Bayes" width="380">
 
 **vcibayes** learns Bayesian networks from cohort data under a structure that
 you specify rather than one discovered from scratch.

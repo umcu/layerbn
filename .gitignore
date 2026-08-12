@@ -51,10 +51,9 @@ datasets/
 # Keep folder scaffolding discoverable
 !**/.gitkeep
 
-# Keep the repo logos (referenced in README). *.png above is a blanket
+# Keep the repo logo (referenced in README). *.png above is a blanket
 # ignore, so a new logo file is invisible to git until it is listed here.
 !logo-vci-bayes.png
-!logo-vci-bayes-dark.png
 
 # --- Python cache / bytecode ---
 __pycache__/
