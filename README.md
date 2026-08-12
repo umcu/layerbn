@@ -33,7 +33,7 @@ of UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
 Requires Python 3.11 or newer.
 
 ```bash
-pip install "vcibayes[notebook] @ git+https://github.com/umcu/vci-bayes@v1.2.0"
+pip install "vcibayes[notebook] @ git+https://github.com/umcu/vci-bayes@v1.2.1"
 vcibayes init my-study
 cd my-study
 jupyter lab analysis.ipynb
@@ -44,7 +44,7 @@ reader. Leave it off if you already have Jupyter, or if you are scripting
 rather than using the notebook:
 
 ```bash
-pip install "git+https://github.com/umcu/vci-bayes@v1.2.0"
+pip install "git+https://github.com/umcu/vci-bayes@v1.2.1"
 ```
 
 The quotes matter: without them the shell tries to interpret the square

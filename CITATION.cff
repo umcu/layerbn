@@ -9,7 +9,7 @@ authors:
     affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
 repository-code: "https://github.com/umcu/vci-bayes"
 license: MIT
-version: 1.2.0
+version: 1.2.1
 date-released: "2026-08-12"
 identifiers:
   - type: doi
