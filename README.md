@@ -2,16 +2,30 @@
 
 <img src="logo-vci-bayes.png" alt="VCI-Bayes" width="380">
 
-**vcibayes** learns Bayesian networks from cohort data under a structure that
-you specify rather than one discovered from scratch.
+> [!NOTE]
+> **What this is for**
+>
+> Many research questions involve one or more outcomes together with a large
+> set of mutually dependent factors. Regression addresses this by selecting a
+> few predictors and adjusting the rest away. Unconstrained structure learning
+> addresses it by inferring direction from the data alone, which produces arcs
+> that contradict what is already known about the ordering.
+>
+> Here the ordering is imposed instead of inferred. Factors are assigned to
+> layers, the layers are placed in the order justified by study design and
+> prior knowledge, and arcs are permitted only in that direction. Estimation is
+> then confined to what genuinely remains open: which of the admissible
+> connections the data support, how stable each is under resampling, and how
+> much each contributes to each outcome.
+>
+> The name reflects the first application, vascular cognitive impairment. The
+> method is general, and applies to any study with one or more outcomes and
+> factors that can be ordered into layers.
 
 You group your variables into ordered layers, for example demographics, then
 risk factors, then imaging, then function, then outcomes. The learner may only
 draw an arc from a layer to itself or to a layer further down that list, so the
-recovered network cannot claim that an outcome causes a risk factor. Dropout is
-represented as its own layer downstream of the outcomes, which lets the
-analysis model who was lost to follow-up instead of imputing it away or
-discarding incomplete cases.
+recovered network cannot claim that an outcome causes a risk factor. 
 
 The analysis is written in a YAML file, not in code. Adapting it to a new
 cohort means editing that file. It does not mean editing this package, and it
