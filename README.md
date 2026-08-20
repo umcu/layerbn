@@ -7,13 +7,14 @@
 
 
 > [!NOTE]
-> **About `layerbn` **
+> **About `layerbn`**
 >
-> Many research questions involve several outcomes and a set of mutually
-> correlated factors. Unconstrained structure learning infers arc directions
-> from the data alone, which can produce arcs that contradict a known temporal
-> or causal ordering — an outcome pointing back to a baseline characteristic,
-> for instance.
+> Many research questions involve multiple outcomes and a range of interrelated factors, 
+> which influence one another and the outcomes both directly and indirectly. A network-based 
+> approach could be of added value here. Unconstrained structure learning infers directions 
+> (i.e., arcs) from one factor to another from the data alone, which can produce arcs that 
+> contradict a known temporal or causal ordering — an outcome pointing back to a baseline 
+> characteristic, for instance.
 >
 > `layerbn` fixes that ordering instead of inferring it. Factors are assigned to
 > layers, the layers are ordered by study design and prior knowledge, and arcs
