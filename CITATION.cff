@@ -7,7 +7,7 @@ authors:
     given-names: Malin
     name-suffix: PhD
     affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
-repository-code: "https://github.com/umcu/layer-bn"
+repository-code: "https://github.com/umcu/layerbn"
 license: MIT
 version: 2.0.0
 date-released: "2026-08-20"

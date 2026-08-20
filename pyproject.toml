@@ -52,10 +52,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/umcu/layer-bn"
-Repository = "https://github.com/umcu/layer-bn"
-Issues = "https://github.com/umcu/layer-bn/issues"
-Changelog = "https://github.com/umcu/layer-bn/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/umcu/layerbn"
+Repository = "https://github.com/umcu/layerbn"
+Issues = "https://github.com/umcu/layerbn/issues"
+Changelog = "https://github.com/umcu/layerbn/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "nbclient>=0.10", "nbformat>=5"]

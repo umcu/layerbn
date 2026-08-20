@@ -1,6 +1,6 @@
 # layerbn
 
-<img src="logo-layer-bn.png" alt="LayerBN" width="380">
+<img src="logo-layerbn.png" alt="LayerBN" width="380">
 
 > [!NOTE]
 > **What this is for**
@@ -20,9 +20,10 @@
 > connections the data support, how stable each is under resampling, and how
 > much each contributes to each outcome.
 >
-> The name reflects the first application, vascular cognitive impairment. The
-> method is general, and applies to any study with one or more outcomes and
-> factors that can be ordered into layers.
+> The name is the method: layers, and a Bayesian network. It applies to any
+> study with one or more outcomes and factors that can be ordered into
+> layers. It was first applied to a vascular cognitive impairment cohort,
+> and released under the name `vcibayes` up to version 1.2.1.
 
 You group your variables into ordered layers, for example demographics, then
 risk factors, then imaging, then function, then outcomes. The learner may only
@@ -48,7 +49,7 @@ Requires Python 3.11 or newer. Four commands, then a notebook.
 **1. Install**
 
 ```bash
-pip install "layerbn[notebook] @ git+https://github.com/umcu/layer-bn@v2.0.0"
+pip install "layerbn[notebook] @ git+https://github.com/umcu/layerbn@v2.0.0"
 ```
 
 `[notebook]` adds JupyterLab and the Parquet reader. The quotes matter —
@@ -301,8 +302,8 @@ spec yourself.
 ## Development
 
 ```bash
-git clone https://github.com/umcu/layer-bn
-cd layer-bn
+git clone https://github.com/umcu/layerbn
+cd layerbn
 pip install -e ".[dev,notebook]"
 
 pytest                  # the whole suite, about two minutes

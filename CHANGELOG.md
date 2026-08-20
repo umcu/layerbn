@@ -10,7 +10,7 @@ in every other field. Nothing about the analysis changed in the rename.
 
 - **The package is now `layerbn`.** Update imports (`from layerbn.analysis
   import Analysis`) and the command (`python -m layerbn init`). The repository
-  moved to `umcu/layer-bn`; GitHub redirects the old URL, and the Zenodo
+  moved to `umcu/layerbn`; GitHub redirects the old URL, and the Zenodo
   concept DOI is unchanged, so existing citations still resolve.
 - **`PreprocessConfig` is now `ProjectConfig`**, and `config.yml` needs only
   `project_root`. `raw_dir` is accepted as an alias for the new `data_dir`,
