@@ -5,41 +5,31 @@
   <img src="logo-layerbn.png" alt="layerbn" width="380">
 </picture>
 
+
 > [!NOTE]
-> **What this is for**
+> **About `layerbn` **
 >
-> Many research questions involve one or more outcomes together and a large
-> set of interrelated factors that follow one another. 
-> Unconstrained structure learning addresses it by inferring directions 
-> between factors and outcomes from the data alone, which produces arcs 
-> that contradict what is already known about the ordering (i.e. that are 
-> causally implausible). 
+> Many research questions involve several outcomes and a set of mutually
+> correlated factors. Unconstrained structure learning infers arc directions
+> from the data alone, which can produce arcs that contradict a known temporal
+> or causal ordering — an outcome pointing back to a baseline characteristic,
+> for instance.
 >
-> Here, using Bayesian Networks (credits to the pyagrum team), 
-> the ordering is imposed instead of inferred. Factors are assigned to
-> layers, the layers are placed in the order justified by study design and
-> prior knowledge, and arcs are permitted only in that direction. Estimation is
-> then confined to what remains open: which of the admissible
-> connections the data support, how stable each is under resampling, and how
-> much each contributes to each outcome.
+> `layerbn` fixes that ordering instead of inferring it. Factors are assigned to
+> layers, the layers are ordered by study design and prior knowledge, and arcs
+> are permitted only in the specified direction. Estimation then answers three
+> questions: which of the admissible arcs the data support, how stable each is
+> under resampling, and how much each contributes to each outcome.
 >
-> The name is the method: layers, and a Bayesian network. It applies to any
-> study with one or more outcomes and factors that can be ordered into
-> layers. It was first applied to a vascular cognitive impairment cohort,
-> and released under the name `vcibayes` up to version 1.2.1.
-
-You group your variables into ordered layers, for example demographics, then
-risk factors, then imaging, then function, then outcomes. The learner may only
-draw an arc from a layer to itself or to a layer further down that list, so the
-recovered network cannot claim that an outcome causes a risk factor. 
-
-The analysis is written in a YAML file, not in code. Adapting it to a new
-cohort means editing that file. It does not mean editing this package, and it
-does not require writing Python.
+> The approach suits any study whose factors can be arranged into ordered
+> layers ahead of one or more outcomes. It was first applied in a vascular
+> cognitive impairment cohort and released as `vcibayes` through v1.2.1;
+> `layerbn` generalises the same method. Networks are fitted with
+> [pyAgrum](https://pyagrum.gitlab.io/).
 
 Developed in the [Vascular Cognitive Impairment (VCI) research
 group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
-of UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
+of UMC Utrecht, department Neurology and Neurosurgery, led by [Malin Overmars, PhD](https://research.umcutrecht.nl/researchers/malin-overmars/).
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17302710.svg)](https://doi.org/10.5281/zenodo.17302710)
 
