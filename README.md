@@ -1,6 +1,9 @@
 # layerbn
 
-<img src="logo-layerbn.png" alt="LayerBN" width="380">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo-layerbn-2.png">
+  <img src="logo-layerbn.png" alt="layerbn" width="380">
+</picture>
 
 > [!NOTE]
 > **What this is for**
