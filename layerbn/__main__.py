@@ -2,15 +2,15 @@
 
 Two commands, both aimed at the point before any Python has been written:
 
-    vcibayes init my-study      # create a folder with a spec and a notebook
-    vcibayes check spec.yml     # validate a spec without starting a kernel
+    python -m layerbn init my-study   # create a project folder
+    python -m layerbn check spec.yml  # validate a spec, without a kernel
 
 `check` is worth running whenever the spec changes. Validation is the same
 code the notebook runs, so a spec that passes here will load there, and a
 typo is reported in a second rather than after a bootstrap has been running
 for half an hour.
 
-Both are also available as `python -m vcibayes ...`, which works even when
+Both are also available as `python -m layerbn ...`, which works even when
 the install directory is not on PATH.
 """
 from __future__ import annotations
@@ -23,9 +23,17 @@ from pathlib import Path
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
+_GITIGNORE = """# Keep config.yml and results out of version control. spec.yml is meant
+# to be committed and published; config.yml holds machine paths.
+config.yml
+outputs/
+.ipynb_checkpoints/
+"""
+
+
 def _init(destination: Path, force: bool) -> int:
-    """Copy the spec and notebook templates into a new project folder."""
-    files = ["spec.yml", "analysis.ipynb"]
+    """Copy the templates into a new project folder."""
+    files = ["spec.yml", "config.yml", "analysis.ipynb"]
     destination.mkdir(parents=True, exist_ok=True)
 
     existing = [f for f in files if (destination / f).exists()]
@@ -39,20 +47,25 @@ def _init(destination: Path, force: bool) -> int:
         shutil.copyfile(TEMPLATE_DIR / name, destination / name)
         print(f"  created {destination / name}")
 
+    gitignore = destination / ".gitignore"
+    if force or not gitignore.exists():
+        gitignore.write_text(_GITIGNORE, encoding="utf-8")
+        print(f"  created {gitignore}")
+
     print(
-        f"\nDone. To start:\n"
+        f"\nNext:\n"
         f"    cd {destination}\n"
-        f"    jupyter lab analysis.ipynb\n\n"
-        "The notebook runs as it stands, on a small simulated cohort, so you\n"
-        "can see the whole analysis before adapting it. To use your own data,\n"
-        "edit spec.yml and set USE_DEMO_DATA = False in the notebook."
+        f"    jupyter lab analysis.ipynb\n"
+        f"\nThen run every cell. It takes about a minute on the built-in\n"
+        f"simulated cohort, so you see the whole analysis before changing\n"
+        f"anything. The notebook tells you what to edit after that."
     )
     return 0
 
 
 def _check(path: Path) -> int:
     """Validate a spec and describe what it declares."""
-    from vcibayes.spec import SpecError, load_spec
+    from layerbn.spec import SpecError, load_spec
 
     try:
         spec = load_spec(path)
@@ -100,7 +113,7 @@ def _check(path: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="vcibayes",
+        prog="layerbn",
         description="Layered Bayesian networks for cohort studies.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)

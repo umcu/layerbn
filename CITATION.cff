@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "vcibayes: layered Bayesian networks for cohort studies"
+title: "layerbn: layered Bayesian networks for cohort studies"
 message: "If you use this software, please cite it using these metadata."
 type: software
 authors:
@@ -7,16 +7,16 @@ authors:
     given-names: Malin
     name-suffix: PhD
     affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
-repository-code: "https://github.com/umcu/vci-bayes"
+repository-code: "https://github.com/umcu/layer-bn"
 license: MIT
-version: 1.2.1
-date-released: "2026-08-12"
+version: 2.0.0
+date-released: "2026-08-20"
 identifiers:
   - type: doi
     value: 10.5281/zenodo.17302710
     description: "Concept DOI for all versions"
 abstract: >-
-  vcibayes learns Bayesian networks from cohort data under a structure
+  layerbn learns Bayesian networks from cohort data under a structure
   specified by the investigator. Variables are grouped into ordered layers,
   and the learner may only draw an arc from a layer to itself or to a layer
   further down that order, so the recovered structure respects the assumed
@@ -29,13 +29,17 @@ abstract: >-
   analysis is declared in a YAML specification rather than in code, covering
   the layers and their order, the arc constraints, network variants,
   discretisation, random seed, bootstrap counts, participant profiles and
-  sensitivity sweeps, so that it can be published alongside a manuscript. The package also provides bootstrap estimates of arc stability,
+  sensitivity sweeps, so that it can be published alongside a manuscript.
+  The package also provides bootstrap estimates of arc stability,
   mutual-information rankings of variables against each outcome, and
   single-variable sensitivity analysis with a check for conditioning on
-  mediators.
+  mediators. The method is general and applies to any study with one or more
+  outcomes and factors that can be ordered into layers. It was first applied
+  to a vascular cognitive impairment cohort, and was released under the name
+  vcibayes up to version 1.2.1.
 keywords:
   - Bayesian network
   - structure learning
   - cohort study
-  - vascular cognitive impairment
+  - epidemiology
   - pyAgrum

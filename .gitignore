@@ -52,8 +52,10 @@ datasets/
 !**/.gitkeep
 
 # Keep the repo logo (referenced in README). *.png above is a blanket
-# ignore, so a new logo file is invisible to git until it is listed here.
-!logo-vci-bayes.png
+# ignore, so a logo file would otherwise be invisible to git. Matched by
+# prefix rather than by exact name, so replacing the logo does not need an
+# edit here — call the file logo-something.png and it will be tracked.
+!logo-*.png
 
 # --- Python cache / bytecode ---
 __pycache__/

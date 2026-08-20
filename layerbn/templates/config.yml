@@ -1,0 +1,21 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Machine paths — WHERE the files are. Not what the analysis is.
+# ════════════════════════════════════════════════════════════════════════
+#
+# `spec.yml` says what the analysis is and is meant to be published. This
+# file says where your data sits on this computer, and is not: keep it out
+# of version control (the .gitignore written next to it already does that).
+#
+# You only need this file once you switch off the demo data. Until then the
+# notebook ignores it.
+
+# The folder everything below is relative to. `.` means the folder holding
+# this file, which is usually what you want.
+project_root: .
+
+# Where your analysis-ready table lives. The spec's `data.path` is looked up
+# inside this folder.
+data_dir: data
+
+# Where results are written: figures, CSVs and the saved network.
+output_dir: outputs

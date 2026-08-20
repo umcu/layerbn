@@ -1,20 +1,22 @@
-# vcibayes
+# layerbn
 
-<img src="logo-vci-bayes.png" alt="VCI-Bayes" width="380">
+<img src="logo-layer-bn.png" alt="LayerBN" width="380">
 
 > [!NOTE]
 > **What this is for**
 >
-> Many research questions involve one or more outcomes together with a large
-> set of mutually dependent factors. Regression addresses this by selecting a
-> few predictors and adjusting the rest away. Unconstrained structure learning
-> addresses it by inferring direction from the data alone, which produces arcs
-> that contradict what is already known about the ordering.
+> Many research questions involve one or more outcomes together and a large
+> set of interrelated factors that follow one another. 
+> Unconstrained structure learning addresses it by inferring directions 
+> between factors and outcomes from the data alone, which produces arcs 
+> that contradict what is already known about the ordering (i.e. that are 
+> causally implausible). 
 >
-> Here the ordering is imposed instead of inferred. Factors are assigned to
+> Here, using Bayesian Networks (credits to the pyagrum team), 
+> the ordering is imposed instead of inferred. Factors are assigned to
 > layers, the layers are placed in the order justified by study design and
 > prior knowledge, and arcs are permitted only in that direction. Estimation is
-> then confined to what genuinely remains open: which of the admissible
+> then confined to what remains open: which of the admissible
 > connections the data support, how stable each is under resampling, and how
 > much each contributes to each outcome.
 >
@@ -41,37 +43,60 @@ of UMC Utrecht, led by [Malin Overmars, PhD](https://github.com/loverma2).
 
 ## Getting started
 
-Requires Python 3.11 or newer.
+Requires Python 3.11 or newer. Four commands, then a notebook.
+
+**1. Install**
 
 ```bash
-pip install "vcibayes[notebook] @ git+https://github.com/umcu/vci-bayes@v1.2.1"
-vcibayes init my-study
+pip install "layerbn[notebook] @ git+https://github.com/umcu/layer-bn@v2.0.0"
+```
+
+`[notebook]` adds JupyterLab and the Parquet reader. The quotes matter —
+without them the shell eats the square brackets.
+
+**2. Create a project**
+
+```bash
+python -m layerbn init my-study
 cd my-study
+```
+
+This writes four files:
+
+| File | What it is |
+| --- | --- |
+| `spec.yml` | **What the analysis is.** The only file you normally edit |
+| `config.yml` | **Where your data is** on this machine. Not shared |
+| `analysis.ipynb` | Runs the analysis. You do not edit code in it |
+| `.gitignore` | Keeps `config.yml` and results out of version control |
+
+**3. Run it once, unchanged**
+
+```bash
 jupyter lab analysis.ipynb
 ```
 
-The `[notebook]` part additionally installs JupyterLab and the Parquet
-reader. Leave it off if you already have Jupyter, or if you are scripting
-rather than using the notebook:
+Run every cell. It takes about a minute on a built-in simulated cohort, so you
+see the whole analysis working before you change anything. The variable names
+you see are placeholders and mean nothing.
 
-```bash
-pip install "git+https://github.com/umcu/vci-bayes@v1.2.1"
-```
+**4. Point it at your own data**
 
-The quotes matter: without them the shell tries to interpret the square
-brackets.
+You need a table with one row per participant, one column per variable, and
+**no missing values** ([see Scope](#scope)). Then:
 
-`vcibayes init` creates two files: `spec.yml`, which describes the analysis,
-and `analysis.ipynb`, which runs it.
+1. Edit `spec.yml` — your variables, grouped into layers, in order.
+2. Edit `config.yml` — the folder holding your table.
+3. Check it: `python -m layerbn check spec.yml`
+4. In the notebook's first cell, set `USE_DEMO_DATA = False`.
+5. Run from the top.
 
-**The notebook runs as it stands.** It uses a small simulated cohort, so you
-can see the entire analysis end to end before adapting anything. When you are
-ready, edit `spec.yml` to describe your own data and set `USE_DEMO_DATA = False`
-in the notebook's first cell.
+That is the whole loop. Your cohort will have different variables, a different
+number of layers and different outcomes; none of it needs a code change.
 
-The variable names in the template are placeholders with no meaning. Your
-cohort will have different variables, a different number of layers and
-different outcomes. None of that needs a code change.
+> `python -m layerbn` and `layerbn` do the same thing. The bare `layerbn`
+> command only works if pip's script directory is on your `PATH`, which it
+> often is not — so the docs use the longer form, which always works.
 
 ### What the notebook produces
 
@@ -93,7 +118,7 @@ itself in `.bifxml`, which can be reopened without repeating the analysis.
 ## The specification
 
 `spec.yml` holds every choice the analysis makes. This is an abbreviated
-example; the file `vcibayes init` writes is fully commented.
+example; the file `python -m layerbn init` writes is fully commented.
 
 ```yaml
 spec_version: 2
@@ -188,7 +213,7 @@ without reporting anything.
 To check a spec without opening a notebook:
 
 ```bash
-vcibayes check spec.yml
+python -m layerbn check spec.yml
 ```
 
 This validates the file and prints the layer order it will impose. Errors name
@@ -230,7 +255,7 @@ The notebook covers the usual path. If you are scripting, `Analysis` exposes
 the same steps, reading every setting from the spec:
 
 ```python
-from vcibayes.analysis import Analysis
+from layerbn.analysis import Analysis
 
 study = Analysis.from_files("spec.yml", "cohort.parquet")
 
@@ -257,7 +282,7 @@ spec yourself.
 | `inference.py` | `mutual_information_scores`, `conditional_mutual_information_scores` |
 | `plotting.py` | `default_layer_colors`, `build_node_colors`, `show_and_save_bn`, `plot_knob_sweep` |
 | `preprocess.py` | `impute_dataframe`, `coalesce`, `to_datetime`, `translate_labels` |
-| `config.py` | `load_project_config`, for machine-specific paths |
+| `config.py` | `load_project_config`, `ProjectConfig`, for machine-specific paths |
 | `demo.py` | `make_demo_cohort`, the simulated cohort used by the template |
 
 `pyagrum` supplies the structure learner and the inference engine.
@@ -268,8 +293,40 @@ spec yourself.
 
 - [`docs/troubleshooting.md`](docs/troubleshooting.md) — error messages, what
   each one means, and what to do about it.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release. Read this
+  before upgrading a running analysis.
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/umcu/layer-bn
+cd layer-bn
+pip install -e ".[dev,notebook]"
+
+pytest                  # the whole suite, about two minutes
+pytest -m "not slow"    # skip the end-to-end notebook run
+ruff check layerbn tests
+```
+
+The suite covers spec validation, the constraint solver, the layer
+guarantees checked on networks that were actually learned, discretisation,
+the CLI, `config.yml`, and the template notebook executed exactly as a new
+user would run it. CI runs it on Python 3.11–3.13.
+
+`tests/test_reproducibility.py` pins the demo cohort's bin edges. Every
+number this package reports is conditional on the discretisation, and the
+edges come from scikit-learn via pyAgrum — neither of which promises to keep
+them fixed across versions. If a dependency upgrade moves them, that file
+fails rather than letting results change quietly. `scikit-learn` is capped
+below 1.9 for the same reason; lift the cap and the pinned edges together,
+or not at all.
 
 ## Citation
 
 Released under the [MIT License](LICENSE). See [CITATION.cff](CITATION.cff) for
 citation metadata.
+
+Released as `vcibayes` up to version 1.2.1. The Zenodo concept DOI covers
+every version under both names, so existing citations still resolve.

@@ -7,7 +7,8 @@ beyond what's already captured by the outcome's Markov blanket).
 """
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import pandas as pd
 
@@ -25,18 +26,22 @@ def mutual_information_scores(
     listed in `exclude` (plus `target` itself) are skipped.
     """
     import pyagrum as gum
-    ie = gum.LazyPropagation(bn)
 
     exclude_set = set(exclude) | {target}
     candidates = [v for v in bn.names() if v not in exclude_set]
     scores: dict[str, float] = {}
     for var in candidates:
         try:
-            it = gum.InformationTheory(ie, target, [var])
+            # A fresh engine per variable. `InformationTheory` restricts the
+            # engine it is given to the variables of that one query, so a
+            # shared engine answers the first variable and then raises
+            # "does not belong to this optimized inference" for every other.
+            it = gum.InformationTheory(gum.LazyPropagation(bn), target, [var])
             scores[var] = it.mutualInformationXY()
         except Exception as exc:
             if verbose:
                 print(f"MI({var} → {target}) failed: {exc}")
+            scores[var] = float("nan")
     return pd.Series(scores, name=f"MI(·; {target})").sort_values(ascending=False)
 
 
@@ -56,7 +61,6 @@ def conditional_mutual_information_scores(
     from the ranking.
     """
     import pyagrum as gum
-    ie = gum.LazyPropagation(bn)
 
     if conditioning_set is None:
         target_id = bn.idFromName(target)
@@ -69,9 +73,12 @@ def conditional_mutual_information_scores(
     scores: dict[str, float] = {}
     for var in candidates:
         try:
-            it = gum.InformationTheory(ie, target, [var], conditioning)
+            # Fresh engine per variable — see `mutual_information_scores`.
+            it = gum.InformationTheory(
+                gum.LazyPropagation(bn), target, [var], conditioning)
             scores[var] = it.mutualInformationXYgivenZ()
         except Exception as exc:
             if verbose:
                 print(f"CMI({var} → {target} | {conditioning}) failed: {exc}")
+            scores[var] = float("nan")
     return pd.Series(scores, name=f"CMI(·; {target} | parents)").sort_values(ascending=False)

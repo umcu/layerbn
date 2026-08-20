@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # So a release candidate can be checked before it is tagged.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          # One run elsewhere, because the analyses this package is written
+          # for are usually done on a laptop, not on Linux.
+          - os: macos-latest
+            python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,notebook]"
+
+      - name: Lint
+        run: python -m ruff check layerbn tests
+
+      - name: Test
+        run: python -m pytest -q
+
+  build:
+    name: Build the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check dist/*
+
+      - name: Install the wheel and run the CLI from it
+        # `layerbn init` copies templates out of the installed package, so a
+        # wheel that omits them passes every other check and still fails for
+        # the first person who installs it.
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          /tmp/venv/bin/python -m layerbn init /tmp/study
+          /tmp/venv/bin/python -m layerbn check /tmp/study/spec.yml
+          test -f /tmp/study/analysis.ipynb
+          test -f /tmp/study/config.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

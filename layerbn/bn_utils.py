@@ -6,7 +6,7 @@ cohort's conventions are assumed.
 
 These functions take the layer map, the discretisation and the layer role
 patterns as separate arguments, which means a caller has to keep them
-consistent with the spec at every call site. `vcibayes.analysis.Analysis`
+consistent with the spec at every call site. `layerbn.analysis.Analysis`
 does that for you and is the recommended entry point; use these directly
 when you need control it does not expose.
 """
@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from itertools import product
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from vcibayes.discretisation import state_for_value
+from layerbn.discretisation import state_for_value
 
 # Layer-name substrings that identify semantic roles. Override when your
 # cohort names its layers differently.
@@ -194,7 +195,7 @@ def build_bn(
     layer_map : mapping
         `{layer_name: [variable, ...]}` defining the expert layering.
     type_processor : DiscreteTypeProcessor
-        Constructed via `vcibayes.discretisation.make_type_processor`.
+        Constructed via `layerbn.discretisation.make_type_processor`.
     score : {"K2", "BIC", "BDeu"}
         Structure-learning score.
     fixed_template : optional
@@ -204,15 +205,23 @@ def build_bn(
         Layer names whose variables should be dropped before learning, for
         instance to leave out a layer measured on only part of the cohort.
     use_smoothing : bool
-        Laplace prior. Automatically on for BIC. Turn on elsewhere when
-        rare state combinations trigger inference errors.
+        Add a Laplace prior, so that a parent configuration nobody in the
+        sample happens to occupy gets a small probability rather than zero.
+        Always on for BIC, which carries no prior of its own and whose
+        zero cells otherwise break inference on bootstrap resamples.
+
+        Ignored for K2 and BDeu: both already contain an implicit prior,
+        and adding a second one double-counts it. aGrUM reports that as
+        "the K2 score already contains a different 'implicit' prior ...
+        the learning will probably be biased", which is exactly what would
+        happen, so the request is dropped rather than honoured.
     within_layers, arcs_between_outcomes, selection_parents
         The three structural conventions. See `configure_guided_structure`;
         the defaults reproduce the behaviour that used to be fixed in code.
     forbidden_pairs, mandatory_pairs, no_parents, no_children
         Extra structural knowledge, as `(parent, child)` pairs and variable
-        names. `vcibayes.spec` builds these from a spec's `constraints`
-        block, and `vcibayes.analysis.Analysis` passes them in for you.
+        names. `layerbn.spec` builds these from a spec's `constraints`
+        block, and `layerbn.analysis.Analysis` passes them in for you.
 
     Notes
     -----
@@ -256,7 +265,11 @@ def build_bn(
     else:
         raise ValueError(f"Unsupported score {score!r}: choose K2, BIC, or BDeu")
 
-    if use_smoothing or score == "BIC":
+    # Only BIC has no prior of its own. K2 and BDeu each carry an implicit
+    # one, and stacking a smoothing prior on top of it biases the score --
+    # aGrUM emits a notification saying so for every fit, which under a
+    # bootstrap means hundreds of them. See `use_smoothing` above.
+    if score == "BIC":
         learner.useSmoothingPrior()
 
     if use_tabu:
@@ -290,11 +303,19 @@ def build_bn(
     bn = learner.learnBN()
 
     if enforce_structure:
+        # Connect every outcome to the selection layer, so scenario inference
+        # always sees the dropout mechanism even when the score did not pick
+        # the arc up. An arc the caller forbade explicitly is left out: the
+        # spec's promise is that constraints narrow what the layer order
+        # allows, and silently reinstating one here would break it.
+        forbidden = set(forbidden_pairs)
         try:
-            dropout_ids = [bn.idFromName(n) for n in dropout_vars if n in bn.names()]
-            outcome_ids = [bn.idFromName(n) for n in true_outcomes if n in bn.names()]
-            for drop_id in dropout_ids:
-                for out_id in outcome_ids:
+            names = set(bn.names())
+            for dropout in (n for n in dropout_vars if n in names):
+                for outcome in (n for n in true_outcomes if n in names):
+                    if (outcome, dropout) in forbidden:
+                        continue
+                    out_id, drop_id = bn.idFromName(outcome), bn.idFromName(dropout)
                     if not bn.existsArc(out_id, drop_id):
                         bn.addArc(out_id, drop_id)
         except Exception:
@@ -372,7 +393,7 @@ def bootstrap_scenario_risks(
         `LazyPropagation.setEvidence` unchanged. Prefer **state indices**:
         pyAgrum reads a bare integer as a state index, a numeric *string*
         as a value to place in a bin, and rejects an interval label such as
-        `'(45;64.6['` outright. `vcibayes.analysis.Analysis.resolve_profile`
+        `'(45;64.6['` outright. `layerbn.analysis.Analysis.resolve_profile`
         converts any of these to indices and reports what it could not
         match; using it avoids the failure mode below.
     target_outcomes : sequence of (var_name, display_label)
@@ -444,7 +465,9 @@ def bootstrap_scenario_risks(
         })
     if failed:
         print(f"Warning: {failed}/{n_bootstraps} bootstrap fits failed and were skipped.")
-    return pd.DataFrame(rows).sort_values(["Scenario", "Outcome", "Category"]).reset_index(drop=True)
+    return (pd.DataFrame(rows)
+            .sort_values(["Scenario", "Outcome", "Category"])
+            .reset_index(drop=True))
 
 
 def descendants(bn: Any, start_id: int) -> set[int]:
@@ -499,7 +522,11 @@ def bootstrap_knob_sweep(
                 "dropout_patterns", DEFAULT_DROPOUT_LAYER_PATTERNS),
         )
     )
-    build_kwargs = {**build_kwargs, "fixed_template": fixed_template, "use_smoothing": True}
+    # `use_smoothing` is deliberately NOT forced on here. It only takes
+    # effect under BIC (see `build_bn`), and forcing it meant every sweep
+    # resample was learned under a different prior from the network being
+    # reported -- so the interval described a procedure nobody ran.
+    build_kwargs = {**build_kwargs, "fixed_template": fixed_template}
 
     ref_bn = build_bn_func(
         df, outcomes=list(outcomes_for_learning), layer_map=layer_map,

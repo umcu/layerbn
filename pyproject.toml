@@ -3,42 +3,92 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "vcibayes"
-version = "1.2.1"
+name = "layerbn"
+dynamic = ["version"]
 description = "Layered Bayesian networks for cohort studies: spec-driven structure learning, bootstrap edge stability, and sensitivity analysis"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Malin Overmars, PhD" }]
-keywords = ["bayesian-network", "pyagrum", "epidemiology", "cohort-study"]
+keywords = [
+    "bayesian-network",
+    "structure-learning",
+    "causal-discovery",
+    "pyagrum",
+    "epidemiology",
+    "cohort-study",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Typing :: Typed",
+]
 
 # pyreadstat is deliberately NOT here: SPSS reading is cohort preprocessing,
 # which lives in the analysis repo, not in the method.
 dependencies = [
-    "numpy",
+    "numpy>=1.24",
     "pandas>=2",
-    "pyyaml",
-    "scikit-learn",
-    "scipy",
-    "matplotlib",
-    "pyagrum",
+    "pyyaml>=6",
+    # Upper bound is deliberate. scikit-learn 1.9 changes the default
+    # `quantile_method` of KBinsDiscretizer, which pyAgrum uses for
+    # quantile binning -- so the bin edges, and therefore every number
+    # this package reports, would move on upgrade. tests/test_reproducibility.py
+    # pins the current edges; lift this bound only together with that file.
+    "scikit-learn>=1.3,<1.9",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    # 2.0 renamed the import from `pyAgrum` to `pyagrum` and moved the
+    # learner API this package calls; 1.x will not run.
+    "pyagrum>=2,<3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/umcu/layer-bn"
+Repository = "https://github.com/umcu/layer-bn"
+Issues = "https://github.com/umcu/layer-bn/issues"
+Changelog = "https://github.com/umcu/layer-bn/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest>=8", "ruff>=0.6", "nbclient>=0.10", "nbformat>=5"]
 # Needed only to run the template notebook; the package itself does not
 # import Jupyter.
 notebook = ["jupyterlab", "pyarrow"]
 
 [project.scripts]
-vcibayes = "vcibayes.__main__:main"
+layerbn = "layerbn.__main__:main"
+
+[tool.hatch.version]
+# Single-sourced: the package is the only place the version is written.
+path = "layerbn/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["vcibayes"]
+packages = ["layerbn"]
 # The spec and notebook templates are shipped inside the package so that
-# `vcibayes init` works from an installed wheel, not only from a checkout.
-artifacts = ["vcibayes/templates/*"]
+# `layerbn init` works from an installed wheel, not only from a checkout.
+artifacts = ["layerbn/templates/*"]
+
+[tool.hatch.build.targets.sdist]
+include = ["layerbn", "tests", "docs", "README.md", "LICENSE", "CITATION.cff"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "slow: end-to-end runs that fit many networks",
+]

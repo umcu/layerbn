@@ -9,8 +9,9 @@ Also provides the single-knob sensitivity plot used by `plot_knob_sweep`.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -63,8 +64,8 @@ def show_and_save_bn(
     Extra kwargs (arcWidth, nodeColor, arcColor, cmapNode, cmapArc, size,
     ...) are forwarded to both the notebook renderer and the exporter.
     """
-    from pyagrum.lib import notebook as gnb
     from pyagrum.lib import image as gumimage
+    from pyagrum.lib import notebook as gnb
 
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,7 +87,7 @@ def plot_knob_sweep(sweep_df: pd.DataFrame, meta: dict[str, Any]) -> None:
     """Line + 95%-CI ribbon plot, one panel per outcome.
 
     `sweep_df` and `meta` are the return values of
-    `vcibayes.bn_utils.bootstrap_knob_sweep`.
+    `layerbn.bn_utils.bootstrap_knob_sweep`.
     """
     import matplotlib.pyplot as plt
 
@@ -104,7 +105,7 @@ def plot_knob_sweep(sweep_df: pd.DataFrame, meta: dict[str, Any]) -> None:
     axes = axes[:, 0]
 
     handles, labels = [], []
-    for ax, outcome in zip(axes, outcomes):
+    for ax, outcome in zip(axes, outcomes, strict=False):
         ax.set_facecolor("#fbfbfb")
         sub = sweep_df[sweep_df["Outcome"] == outcome]
         states = meta["outcome_states"][outcome]
@@ -125,7 +126,7 @@ def plot_knob_sweep(sweep_df: pd.DataFrame, meta: dict[str, Any]) -> None:
                 handles.append(line)
                 labels.append(state)
             if state == "Yes":
-                for xi, yi in zip(x, d["P"]):
+                for xi, yi in zip(x, d["P"], strict=False):
                     if np.isfinite(yi):
                         ax.annotate(
                             f"{yi:.0%}", (xi, yi), textcoords="offset points",

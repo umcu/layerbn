@@ -3,7 +3,7 @@
 Messages you are likely to meet, what each one means, and what to do. They are
 grouped by when they appear.
 
-If a message is not here, the first thing to try is `vcibayes check spec.yml`,
+If a message is not here, the first thing to try is `python -m layerbn check spec.yml`,
 which validates the spec on its own and usually names the problem.
 
 ---
@@ -98,9 +98,13 @@ not to where the spec lives. Either `cd` to the project folder first, or give
 
 ### `FileNotFoundError: data file not found: .../analysis_ready.parquet`
 
-`data.path` in the spec points at something that is not there. Note that it is
-resolved against `output_dir` from `config.yml` when you have one, and against
-the working directory otherwise.
+`data.path` in the spec points at something that is not there. It is a file
+name, looked up inside `data_dir` from `config.yml`. Check that `data_dir` is
+the folder you meant:
+
+```bash
+python -c "from layerbn.config import load_project_config as l; print(l('config.yml'))"
+```
 
 While setting up, `USE_DEMO_DATA = True` skips this entirely.
 
@@ -143,13 +147,17 @@ Check `study.bins(...)` after any change.
 
 ### `[aGrUM notification] The K2 score already contains a different 'implicit' prior. Therefore, the learning will probably be biased.`
 
-Informational, from pyAgrum, and expected during the knob sweep. The sweep
-turns on Laplace smoothing so that rare combinations of states do not make
-inference fail, and the K2 score carries its own implicit prior. The two
-overlap.
+**This should no longer appear.** Up to v1.2.1 the knob sweep forced a Laplace
+smoothing prior on top of whichever score you chose, and K2 — the default —
+carries an implicit prior already. pyAgrum was reporting a real problem: the
+two priors were being counted together, and the sweep's resamples were
+therefore learned under different assumptions from the network being reported.
 
-It appears once per resample, so a 200-resample sweep prints it 200 times.
-Nothing is wrong.
+Since v2.0.0 the smoothing prior is applied only for BIC, the one supported
+score without a prior of its own, so the message does not arise.
+
+If you see it, something is passing `use_smoothing=True` to `build_bn`
+directly. Remove it; it is ignored for K2 and BDeu by design.
 
 ### `Bootstrap 17 failed: ...` and `Note: 3/200 bootstrap fits failed`
 

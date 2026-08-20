@@ -9,7 +9,7 @@ them can silently disagree with the spec.
 `Analysis` closes that gap. It holds the spec and the data, and every method
 takes its settings from the spec:
 
-    from vcibayes.analysis import Analysis
+    from layerbn.analysis import Analysis
 
     study = Analysis.from_files("spec.yml", "cohort.parquet")
     bn = study.network("main")
@@ -39,26 +39,26 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from vcibayes.bn_utils import (
+from layerbn.bn_utils import (
     bootstrap_edge_frequencies,
     bootstrap_knob_sweep,
     bootstrap_scenario_risks,
     build_bn,
 )
-from vcibayes.discretisation import describe_template, make_type_processor, state_for_value
-from vcibayes.inference import (
+from layerbn.discretisation import describe_template, make_type_processor, state_for_value
+from layerbn.inference import (
     conditional_mutual_information_scores,
     mutual_information_scores,
 )
-from vcibayes.plotting import build_node_colors, default_layer_colors, plot_knob_sweep
-from vcibayes.spec import Spec, check_against_dataframe, load_spec
-
+from layerbn.plotting import build_node_colors, default_layer_colors, plot_knob_sweep
+from layerbn.spec import Spec, check_against_dataframe, load_spec
 
 # ---------------------------------------------------------------------------
 # progress reporting
@@ -119,7 +119,7 @@ class Analysis:
     Parameters
     ----------
     spec : Spec
-        Loaded via `vcibayes.spec.load_spec`.
+        Loaded via `layerbn.spec.load_spec`.
     df : DataFrame
         Analysis-ready and fully imputed. The package does no preprocessing;
         see the scope note in the README.
@@ -178,7 +178,7 @@ class Analysis:
         data_path: str | Path,
         *,
         verbose: bool = True,
-    ) -> "Analysis":
+    ) -> Analysis:
         """Load a spec and a dataframe from disk.
 
         `data_path` may be any format pandas reads by extension: `.parquet`,
@@ -369,7 +369,12 @@ class Analysis:
 
     # -- interpretation ----------------------------------------------------
 
-    def information(self, variant_name: str, *, targets: Sequence[str] | None = None) -> pd.DataFrame:
+    def information(
+        self,
+        variant_name: str,
+        *,
+        targets: Sequence[str] | None = None,
+    ) -> pd.DataFrame:
         """Rank variables by mutual information with each spec target.
 
         Returns one row per (target, variable), with columns:
@@ -585,13 +590,19 @@ class Analysis:
         import pyagrum as gum
 
         bn = self.network(variant_name)
-        engine = gum.LazyPropagation(bn)
-        engine.makeInference()
 
         raw: dict[tuple[int, int], float] = {}
         for parent, child in bn.arcs():
             try:
-                info = gum.InformationTheory(engine, child, [parent])
+                # A fresh engine per arc. `InformationTheory` restricts the
+                # engine it is handed to that one query's variables, so a
+                # shared engine answers some pairs and raises "does not
+                # belong to this optimized inference" for others, depending
+                # on the join tree. Whichever ones fail would silently take
+                # the placeholder width below and look uninformative.
+                # A new engine costs well under a millisecond per arc.
+                info = gum.InformationTheory(
+                    gum.LazyPropagation(bn), child, [parent])
                 raw[(parent, child)] = max(info.mutualInformationXY(), 0.0)
             except Exception:
                 raw[(parent, child)] = 0.1

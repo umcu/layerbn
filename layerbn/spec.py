@@ -10,7 +10,7 @@ is shareable as-is.
 The spec starts at the analysis-ready dataframe. Preprocessing is not
 expressible here and is not meant to be.
 
-    from vcibayes.spec import load_spec
+    from layerbn.spec import load_spec
     spec = load_spec("spec.yml")
     spec.layer_map          # {layer name: [variable, ...]}, in spec order
     spec.variant("joint")   # outcomes + exclude_layers for one network
@@ -23,9 +23,10 @@ bootstrap rather than after it.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import yaml
 
@@ -284,7 +285,7 @@ class Spec:
     def layers_with_role(self, role: str) -> list[str]:
         return [layer.name for layer in self.layers if layer.role == role]
 
-    # -- patterns handed to vcibayes.bn_utils ---------------------------------
+    # -- patterns handed to layerbn.bn_utils ---------------------------------
     # `build_bn` identifies the outcome and dropout layers by substring match
     # on the layer name. Passing the full names of the layers declared with
     # those roles makes the spec, not a naming convention, authoritative.
@@ -799,6 +800,6 @@ def check_against_dataframe(spec: Spec, columns: Iterable[str]) -> list[str]:
             f"{len(unassigned)} column(s) in the dataframe are in no layer: "
             f"{unassigned}. Passed to `build_bn` they become nodes that the "
             f"layer constraint isolates, since it permits no arc to or from a "
-            f"variable with no layer. `vcibayes.analysis.Analysis` drops them "
+            f"variable with no layer. `layerbn.analysis.Analysis` drops them "
             f"instead, so the network matches the spec.")
     return warnings

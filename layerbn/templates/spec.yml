@@ -24,9 +24,14 @@
 #   2. Mark your outcome layer `role: outcome` and, if you model dropout,
 #      mark that layer `role: selection`.
 #   3. List one variant per network you want to learn.
-#   4. Point `data.path` at your analysis-ready file.
+#   4. Point `data.path` at your analysis-ready file. The FOLDER it sits in
+#      goes in config.yml, not here.
 #   5. Adjust the analyses at the bottom, or delete the ones you do not
 #      want — they are all optional.
+#
+#   Then check your work without waiting for a model to fit:
+#
+#       python -m layerbn check spec.yml
 
 spec_version: 2
 name: my-study
@@ -36,8 +41,9 @@ description: >
   outcomes mean and over what follow-up period.
 
 data:
-  # The analysis-ready, fully imputed table. Relative paths resolve against
-  # `output_dir` in config.yml. Parquet, CSV, Feather, SPSS and Stata files
+  # The analysis-ready, fully imputed table. This is a FILE NAME, resolved
+  # inside `data_dir` from config.yml — so the folder stays machine-specific
+  # and this file stays publishable. Parquet, CSV, Feather, SPSS and Stata
   # are all read by extension.
   #
   # This package starts HERE. Deriving outcomes, applying censoring rules,

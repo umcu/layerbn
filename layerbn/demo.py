@@ -17,7 +17,7 @@ the method assumes:
   construction, so a complete-case analysis of this cohort would be biased;
 * an optional marker layer that can be excluded, to demonstrate an ablation.
 
-    from vcibayes.demo import make_demo_cohort
+    from layerbn.demo import make_demo_cohort
     df = make_demo_cohort(n=1200, seed=0)
 
 Because the generating structure is known, the demo can show what a

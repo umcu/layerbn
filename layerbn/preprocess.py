@@ -6,9 +6,8 @@ user-supplied mapping, and imputation.
 """
 from __future__ import annotations
 
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
-import numpy as np
 import pandas as pd
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401  (side-effect import)
 from sklearn.impute import IterativeImputer
@@ -89,7 +88,7 @@ def impute_dataframe(df: pd.DataFrame, seed: int = 1234) -> pd.DataFrame:
         if not series.isnull().any():
             continue
         modes = series.mode(dropna=True)
-        if pd.api.types.is_categorical_dtype(series):
+        if isinstance(series.dtype, pd.CategoricalDtype):
             fill = modes.iloc[0] if not modes.empty else series.cat.categories[0]
             if fill not in series.cat.categories:
                 series = series.cat.add_categories([fill])
