@@ -16,6 +16,10 @@ pytestmark = pytest.mark.slow
 
 nbformat = pytest.importorskip("nbformat")
 nbclient = pytest.importorskip("nbclient")
+# Executing a notebook also needs a registered kernel, which `nbclient`
+# does not pull in. Without this the suite errors on a `[dev]`-only
+# install instead of skipping, which reads as a broken package.
+pytest.importorskip("ipykernel", reason="no Jupyter kernel; install .[notebook]")
 
 
 @pytest.fixture(scope="module")
