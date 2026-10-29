@@ -28,7 +28,7 @@
 
 Developed in the [Vascular Cognitive Impairment (VCI) research
 group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
-of UMC Utrecht, department Neurology and Neurosurgery, led by [Malin Overmars, PhD](https://research.umcutrecht.nl/researchers/malin-overmars/).
+of UMC Utrecht, department Neurology and Neurosurgery. This project was led by [Malin Overmars, PhD](https://research.umcutrecht.nl/researchers/malin-overmars/).
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22028618.svg)](https://doi.org/10.5281/zenodo.22028618)
 
