@@ -28,7 +28,7 @@ with one or more outcomes at the end.
 
 layerbn was developed in the
 [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
-at UMC Utrecht, department of Neurology and Neurosurgery, led by
+at UMC Utrecht, department of Neurology and Neurosurgery. This project was led by
 [Malin Overmars, PhD](https://research.umcutrecht.nl/researchers/malin-overmars/). It was first
 used in a vascular cognitive impairment cohort, and was released as `vcibayes` up to
 version 1.2.1.

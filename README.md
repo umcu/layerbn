@@ -81,6 +81,6 @@ earlier were released as `vcibayes`. The Zenodo concept DOI covers all versions 
 names.
 
 Developed in the [Vascular Cognitive Impairment (VCI) research group](https://research.umcutrecht.nl/research-groups/vascular-cognitive-impairment-vci/)
-at UMC Utrecht, department of Neurology and Neurosurgery, led by
+at UMC Utrecht, department of Neurology and Neurosurgery. This project was led by
 [Malin Overmars, PhD](https://research.umcutrecht.nl/researchers/malin-overmars/).
 Networks are fitted with [pyAgrum](https://pyagrum.gitlab.io/).
