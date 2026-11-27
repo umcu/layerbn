@@ -9,8 +9,8 @@ authors:
     affiliation: "UMC Utrecht, Vascular Cognitive Impairment research group"
 repository-code: "https://github.com/umcu/layerbn"
 license: MIT
-version: 2.0.0
-date-released: "2026-08-20"
+version: 3.0.0
+date-released: "2026-11-27"
 identifiers:
   - type: doi
     value: 10.5281/zenodo.17302710
@@ -20,22 +20,20 @@ abstract: >-
   specified by the investigator. Variables are grouped into ordered layers,
   and the learner may only draw an arc from a layer to itself or to a layer
   further down that order, so the recovered structure respects the assumed
-  direction of influence. Dropout is represented as a selection layer
-  downstream of the outcomes, allowing non-random loss to follow-up to be
-  modelled rather than imputed away. Beyond the layer ordering, individual
-  arcs may be forbidden or required, and variables may be pinned as roots or
-  sinks; such constraints may only narrow what the ordering permits, so the
-  ordering remains a complete statement of the assumed structure. The
-  analysis is declared in a YAML specification rather than in code, covering
-  the layers and their order, the arc constraints, network variants,
-  discretisation, random seed, bootstrap counts, participant profiles and
-  sensitivity sweeps, so that it can be published alongside a manuscript.
-  The package also provides bootstrap estimates of arc stability,
-  mutual-information rankings of variables against each outcome, and
-  single-variable sensitivity analysis with a check for conditioning on
-  mediators. The method is general and applies to any study with one or more
-  outcomes and factors that can be ordered into layers. It was first applied
-  to a vascular cognitive impairment cohort, and was released under the name
+  order of influence. Variables measured more than once can optionally be
+  listed once with their time points, and the layers are generated in time
+  order.
+  Beyond the layer order, individual arcs may be forbidden or required, and
+  variables may be pinned as roots or sinks; such rules can only narrow what
+  the order permits. The analysis is described in a variables table and a
+  settings file instead of code, so that it can be published with a
+  manuscript. The package provides bootstrap estimates of arc stability,
+  mutual-information rankings of variables against each target, outcome
+  probabilities for defined profiles with bootstrap intervals, and
+  single-variable sensitivity analysis. A command line produces figures,
+  tables and a report. The method is general and applies to any study whose
+  variables can be arranged in ordered layers. It was first applied to a
+  vascular cognitive impairment cohort, and was released under the name
   vcibayes up to version 1.2.1.
 keywords:
   - Bayesian network

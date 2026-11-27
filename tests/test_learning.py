@@ -1,201 +1,194 @@
-"""The structural guarantees, checked on networks that were actually learned.
-
-`test_spec.py` checks that a bad spec is rejected. These tests check the
-claim the package exists to make: that no arc in a learned network runs
-against the declared layer order, whatever the data say.
-"""
+"""Structure learning: the layer guarantee, the rules, and recovery of a known structure."""
 from __future__ import annotations
 
 import pytest
 
-from layerbn.analysis import Analysis
+from layerbn.bn_utils import (
+    bootstrap_edge_frequencies,
+    build_bn,
+    configure_structure,
+    descendants,
+)
+from layerbn.demo import TRUE_EDGES, make_demo_cohort
+from layerbn.discretisation import make_type_processor
 
 
 @pytest.fixture(scope="module")
-def study(request):
-    """One Analysis over the template spec and the demo cohort."""
-    import shutil
-    from pathlib import Path
-    from tempfile import mkdtemp
-
-    from layerbn.demo import make_demo_cohort
-    from layerbn.spec import load_spec
-
-    templates = Path(__file__).resolve().parents[1] / "layerbn" / "templates"
-    workdir = Path(mkdtemp())
-    request.addfinalizer(lambda: shutil.rmtree(workdir, ignore_errors=True))
-    shutil.copyfile(templates / "spec.yml", workdir / "spec.yml")
-
-    spec = load_spec(workdir / "spec.yml")
-    return Analysis(spec, make_demo_cohort(n=600, seed=0), verbose=False)
+def layer_map(project):
+    return {k: list(v) for k, v in project.network("all_variables").layer_map.items()}
 
 
-def arcs_by_name(bn):
-    return [(bn.variable(p).name(), bn.variable(c).name()) for p, c in bn.arcs()]
+@pytest.fixture(scope="module")
+def processor():
+    return make_type_processor(method="quantile", bins=4, categorical_max_levels=10)
 
 
-# --------------------------------------------------------------------------
-# the layer ordering
-# --------------------------------------------------------------------------
-
-def test_no_arc_runs_upstream(study):
-    """The central guarantee. An arc may go down the layer list, never up."""
-    bn = study.network("joint")
-    for parent, child in arcs_by_name(bn):
-        assert study.spec.layer_index(parent) <= study.spec.layer_index(child), (
-            f"{parent} -> {child} runs upstream, from layer "
-            f"{study.spec.layer_index(parent)} to {study.spec.layer_index(child)}"
-        )
+def arcs_of(bn):
+    return {(bn.variable(p).name(), bn.variable(c).name()) for p, c in bn.arcs()}
 
 
-def test_no_arcs_between_outcomes(study):
-    """One endpoint must never be reported as a cause of another."""
-    bn = study.network("joint")
-    outcomes = set(study.spec.layers[5].variables)
-    for parent, child in arcs_by_name(bn):
-        assert not (parent in outcomes and child in outcomes)
+def layer_index(layer_map):
+    return {c: i for i, members in enumerate(layer_map.values()) for c in members}
 
 
-def test_dropout_is_downstream_of_every_outcome(study):
-    """Selection layer: every outcome connects to it after learning."""
-    bn = study.network("joint")
-    arcs = set(arcs_by_name(bn))
-    dropout = "DROPOUT REASON"
-    for outcome in ("OUTCOME DECLINE", "OUTCOME EVENT"):
-        assert (outcome, dropout) in arcs
+# -- the guarantee the package exists for ---------------------------------------------
+
+def test_no_arc_runs_against_the_layer_order(demo_df, layer_map, processor):
+    bn = build_bn(demo_df, layer_map, processor)
+    position = layer_index(layer_map)
+    assert arcs_of(bn), "the demo should yield some arcs"
+    for parent, child in arcs_of(bn):
+        assert position[parent] <= position[child], f"{parent} -> {child} runs upstream"
 
 
-def test_only_outcomes_point_into_the_selection_layer(study):
-    bn = study.network("joint")
-    outcomes = set(study.spec.layers[5].variables)
-    for parent, child in arcs_by_name(bn):
-        if child == "DROPOUT REASON":
-            assert parent in outcomes, f"{parent} should not point at dropout"
+def test_the_guarantee_holds_in_every_bootstrap_resample(demo_df, layer_map, processor):
+    freqs, failed = bootstrap_edge_frequencies(
+        demo_df, layer_map=layer_map, type_processor=processor, resamples=8, seed=1)
+    position = layer_index(layer_map)
+    assert failed == 0 and freqs
+    assert all(position[p] <= position[c] for p, c in freqs)
 
 
-def test_excluded_layer_is_absent_from_the_network(study):
-    """`exclude_layers` on a variant drops those variables entirely."""
-    bn = study.network("joint")
-    assert "MARKER 1" not in bn.names()
-    assert "MARKER 2" not in bn.names()
+def test_reordering_the_layers_changes_what_is_possible(demo_df, layer_map, processor):
+    """The order is the constraint: reverse it and the arcs reverse with it."""
+    forward = arcs_of(build_bn(demo_df, layer_map, processor))
+    backward_map = dict(reversed(list(layer_map.items())))
+    backward = arcs_of(build_bn(demo_df, backward_map, processor))
+    position = layer_index(backward_map)
+    assert all(position[p] <= position[c] for p, c in backward)
+    assert forward != backward
 
 
-def test_ablation_variant_puts_the_layer_back(study):
-    bn = study.network("with_markers")
-    assert "MARKER 1" in bn.names()
+def test_the_demo_structure_is_recovered(layer_map, processor):
+    """With 800 participants the learner finds most known arcs and few wrong ones."""
+    df = make_demo_cohort(n=800, seed=0)
+    learned = arcs_of(build_bn(df, layer_map, processor))
+    truth = set(TRUE_EDGES)
+    recall = len(learned & truth) / len(truth)
+    precision = len(learned & truth) / len(learned)
+    assert recall >= 0.70, f"only {recall:.0%} of the true arcs were found"
+    assert precision >= 0.80, f"only {precision:.0%} of the learned arcs are true"
 
 
-# --------------------------------------------------------------------------
-# reproducibility
-# --------------------------------------------------------------------------
+# -- rules -------------------------------------------------------------------------------
 
-def test_the_same_seed_gives_the_same_network(study):
-    """A published seed has to mean something."""
-    first = sorted(arcs_by_name(study.network("joint")))
-    second = sorted(arcs_by_name(study.network("joint", refresh=True)))
+def test_arcs_inside_a_layer_can_be_switched_off(demo_df, layer_map, processor):
+    with_inner = arcs_of(build_bn(demo_df, layer_map, processor))
+    layer = "Baseline measures"
+    members = set(layer_map[layer])
+    assert any(p in members and c in members for p, c in with_inner), \
+        "this check needs an arc inside the layer to start from"
+    without = arcs_of(build_bn(demo_df, layer_map, processor, no_inner_arcs=[layer]))
+    assert not any(p in members and c in members for p, c in without)
+
+
+def test_a_forbidden_arc_does_not_occur(demo_df, layer_map, processor):
+    learned = arcs_of(build_bn(demo_df, layer_map, processor))
+    victim = next(iter(learned))
+    again = arcs_of(build_bn(demo_df, layer_map, processor, forbidden_pairs=[victim]))
+    assert victim not in again
+
+
+def test_a_required_arc_occurs(demo_df, layer_map, processor):
+    pair = ("SEX", "OUTCOME")
+    assert pair not in arcs_of(build_bn(demo_df, layer_map, processor))
+    assert pair in arcs_of(build_bn(demo_df, layer_map, processor, mandatory_pairs=[pair]))
+
+
+def test_no_parents_and_no_children(demo_df, layer_map, processor):
+    bn = build_bn(demo_df, layer_map, processor,
+                  no_parents=["EXPOSURE_A"], no_children=["AGE"])
+    arcs = arcs_of(bn)
+    assert not any(c == "EXPOSURE_A" for _, c in arcs)
+    assert not any(p == "AGE" for p, _ in arcs)
+
+
+def test_a_rule_naming_a_variable_outside_the_network_is_ignored(demo_df, layer_map, processor):
+    build_bn(demo_df, layer_map, processor, mandatory_pairs=[("AGE", "NOT_IN_NETWORK")],
+             no_parents=["NOT_IN_NETWORK"])
+
+
+def test_a_pair_that_is_required_and_forbidden_is_named(layer_map):
+    class Learner:
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+    with pytest.raises(ValueError, match=r"both required and forbidden.*AGE.*SEX"):
+        configure_structure(Learner(), layer_map, forbidden_pairs=[("AGE", "SEX")],
+                            mandatory_pairs=[("AGE", "SEX")])
+
+
+def test_without_structure_enforced_arcs_may_run_upstream(demo_df, layer_map, processor):
+    """The unconstrained search is only a comparison, but it must really be unconstrained."""
+    bn = build_bn(demo_df, layer_map, processor, enforce_structure=False)
+    position = layer_index(layer_map)
+    assert any(position[p] > position[c] for p, c in arcs_of(bn))
+
+
+@pytest.mark.parametrize("score", ["K2", "BIC", "BDeu"])
+@pytest.mark.parametrize("search", ["tabu", "greedy"])
+def test_every_score_and_search_runs(demo_df, layer_map, processor, score, search):
+    bn = build_bn(demo_df, layer_map, processor, score=score, search=search)
+    assert len(bn.names()) == len(layer_index(layer_map))
+
+
+def test_the_maximum_number_of_parents_is_respected(demo_df, layer_map, processor):
+    bn = build_bn(demo_df, layer_map, processor, max_parents=1)
+    assert all(len(bn.parents(i)) <= 1 for i in bn.nodes())
+
+
+def test_an_unknown_score_is_refused(demo_df, layer_map, processor):
+    with pytest.raises(ValueError, match="Unsupported score"):
+        build_bn(demo_df, layer_map, processor, score="AIC")
+
+
+def test_the_same_seed_gives_the_same_network(demo_df, layer_map, processor):
+    first = arcs_of(build_bn(demo_df, layer_map, processor, seed=3))
+    second = arcs_of(build_bn(demo_df, layer_map, processor, seed=3))
     assert first == second
 
 
-def test_the_demo_cohort_is_reproducible():
-    from layerbn.demo import make_demo_cohort
-
-    a = make_demo_cohort(n=200, seed=7)
-    b = make_demo_cohort(n=200, seed=7)
-    assert a.equals(b)
-    assert not a.equals(make_demo_cohort(n=200, seed=8))
-
-
-def test_bootstrap_frequencies_are_reproducible(study):
-    first = study.edge_frequencies("joint", refresh=True)
-    second = study.edge_frequencies("joint", refresh=True)
-    assert first == second
+@pytest.mark.parametrize("score", ["K2", "BDeu"])
+def test_smoothing_is_not_stacked_on_a_score_with_its_own_prior(
+        demo_df, layer_map, processor, capfd, score):
+    """aGrUM warns once per fit if a second prior is added to K2 or BDeu."""
+    build_bn(demo_df, layer_map, processor, score=score)
+    captured = capfd.readouterr()
+    assert "implicit" not in captured.out + captured.err
 
 
-# --------------------------------------------------------------------------
-# constraints reach the learner
-# --------------------------------------------------------------------------
+# -- bootstrap frequencies ---------------------------------------------------------------
 
-def test_a_forbidden_arc_is_absent_from_the_learned_network(study):
-    """Forbidding an arc the learner would otherwise draw must remove it."""
-    baseline = set(arcs_by_name(study.network("joint")))
-    # Sorted, so the arc under test does not depend on set iteration order.
-    candidate = next(
-        ((p, c) for p, c in sorted(baseline)
-         if study.spec.layer_index(p) < study.spec.layer_index(c)),
-        None,
-    )
-    assert candidate is not None, "expected the demo network to have a downstream arc"
+def test_frequencies_are_divided_by_the_resamples_requested(
+        demo_df, layer_map, processor, monkeypatch):
+    """A failed fit must lower every frequency, not drop out of the denominator."""
+    import layerbn.bn_utils as module
+    real = module.build_bn
+    calls = {"n": 0}
 
-    bn = study.network("joint", forbidden_pairs={candidate})
-    assert candidate not in set(arcs_by_name(bn))
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] % 2 == 0:
+            raise RuntimeError("simulated failure")
+        return real(*args, **kwargs)
 
-
-def test_forbidding_an_outcome_to_dropout_arc_is_honoured(study):
-    """Those arcs are re-added after learning; an explicit forbid still wins.
-
-    Otherwise `constraints.forbid` would be silently ignored for exactly the
-    arcs the selection layer exists to model, and the spec's "constraints
-    only narrow" promise would not hold.
-    """
-    pair = ("OUTCOME EVENT", "DROPOUT REASON")
-    assert pair in set(arcs_by_name(study.network("joint")))
-
-    bn = study.network("joint", forbidden_pairs={pair})
-    assert pair not in set(arcs_by_name(bn))
-    # The other outcome is untouched.
-    assert ("OUTCOME DECLINE", "DROPOUT REASON") in set(arcs_by_name(bn))
+    monkeypatch.setattr(module, "build_bn", flaky)
+    freqs, failed = bootstrap_edge_frequencies(
+        demo_df, layer_map=layer_map, type_processor=processor, resamples=6, seed=0)
+    assert failed == 3
+    assert max(freqs.values()) <= 0.5
 
 
-def test_a_required_arc_is_present_in_the_learned_network(study):
-    bn = study.network("joint", mandatory_pairs={("SEX", "OUTCOME EVENT")})
-    assert ("SEX", "OUTCOME EVENT") in set(arcs_by_name(bn))
+def test_progress_is_reported_once_per_resample(demo_df, layer_map, processor):
+    ticks = []
+    bootstrap_edge_frequencies(demo_df, layer_map=layer_map, type_processor=processor,
+                               resamples=3, seed=0, progress=lambda: ticks.append(1))
+    assert len(ticks) == 3
 
 
-def test_no_parents_pins_a_root(study):
-    bn = study.network("joint", no_parents={"EDUCATION YEARS"})
-    for _parent, child in arcs_by_name(bn):
-        assert child != "EDUCATION YEARS"
-
-
-def test_within_layers_false_disconnects_a_layer(study):
-    bn = study.network("joint", within_layers=False)
-    for parent, child in arcs_by_name(bn):
-        assert study.spec.layer_index(parent) != study.spec.layer_index(child)
-
-
-# --------------------------------------------------------------------------
-# results are well formed
-# --------------------------------------------------------------------------
-
-def test_bins_cover_every_variable_in_the_network(study):
-    bins = study.bins("joint")
-    assert not bins.empty
-    assert len(bins) == len(study.network("joint").names())
-
-
-def test_information_is_non_negative_and_covers_the_targets(study):
-    info = study.information("joint")
-    assert set(info["Target"]) == {"OUTCOME DECLINE", "OUTCOME EVENT"}
-    assert (info["MI"] >= 0).all()
-    assert info["CMI"].dropna().ge(0).all()
-
-
-def test_stable_edges_frequencies_are_probabilities(study):
-    edges = study.stable_edges("joint")
-    assert not edges.empty
-    assert edges["Frequency"].between(0, 1).all()
-    assert set(edges.columns) == {"Parent", "Child", "Frequency", "In network"}
-
-
-def test_scenario_probabilities_sum_to_one_per_outcome(study):
-    risks = study.scenarios("joint")
-    assert not risks.isna().any().any()
-    totals = risks.groupby(["Scenario", "Outcome"])["Mean probability"].sum()
-    assert totals.between(0.99, 1.01).all()
-
-
-def test_knob_sweep_returns_a_finite_table(study):
-    sweep, meta = study.knob_sweep("joint")
-    assert not sweep.isna().any().any()
-    assert sweep["P"].between(0, 1).all()
-    assert meta["knob"] == "MEASUREMENT A"
+def test_descendants_follow_arcs_downstream(demo_df, layer_map, processor):
+    bn = build_bn(demo_df, layer_map, processor)
+    ids = {bn.variable(i).name(): i for i in bn.nodes()}
+    below = {bn.variable(i).name() for i in descendants(bn, ids["AGE"])}
+    position = layer_index(layer_map)
+    assert below and all(position[c] >= position["AGE"] for c in below)
+    assert "AGE" not in below

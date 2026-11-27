@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "layerbn"
 dynamic = ["version"]
-description = "Layered Bayesian networks for cohort studies: spec-driven structure learning, bootstrap edge stability, and sensitivity analysis"
+description = "Layered Bayesian networks for cohort studies: ordered layers, arc stability by bootstrap, and a report from two input files"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -32,12 +32,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# pyreadstat is deliberately NOT here: SPSS reading is cohort preprocessing,
-# which lives in the analysis repo, not in the method.
+# pyreadstat is not a dependency. Install it to read SPSS (.sav) data files.
 dependencies = [
     "numpy>=1.24",
     "pandas>=2",
     "pyyaml>=6",
+    # Reads the variables workbook (variables.xlsx) and writes tables.xlsx.
+    "openpyxl>=3.1",
     # Upper bound is deliberate. scikit-learn 1.9 changes the default
     # `quantile_method` of KBinsDiscretizer, which pyAgrum uses for
     # quantile binning -- so the bin edges, and therefore every number
@@ -47,21 +48,28 @@ dependencies = [
     "scipy>=1.10",
     "matplotlib>=3.7",
     # 2.0 renamed the import from `pyAgrum` to `pyagrum` and moved the
-    # learner API this package calls; 1.x will not run.
-    "pyagrum>=2,<3",
+    # learner API this package calls; 1.x will not run. The upper bound is
+    # deliberate, like the one for scikit-learn: quantile bin edges differ
+    # between pyAgrum 2.1 and 2.3, so every result moves with the version.
+    # tests/test_reproducibility.py records the edges per series. Lift the
+    # bound only together with that file.
+    "pyagrum>=2.1,<2.4",
 ]
 
 [project.urls]
 Homepage = "https://github.com/umcu/layerbn"
 Repository = "https://github.com/umcu/layerbn"
 Issues = "https://github.com/umcu/layerbn/issues"
+Documentation = "https://umcu.github.io/layerbn/"
 Changelog = "https://github.com/umcu/layerbn/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "nbclient>=0.10", "nbformat>=5"]
-# Needed only to run the template notebook; the package itself does not
-# import Jupyter.
+# For the optional notebook (layerbn init --notebook) and for Parquet data
+# files. The package itself does not import Jupyter.
 notebook = ["jupyterlab", "pyarrow"]
+# To build the documentation site: mkdocs serve (or mkdocs build --strict).
+docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5", "mkdocstrings[python]>=0.26"]
 
 [project.scripts]
 layerbn = "layerbn.__main__:main"
@@ -77,7 +85,7 @@ packages = ["layerbn"]
 artifacts = ["layerbn/templates/*"]
 
 [tool.hatch.build.targets.sdist]
-include = ["layerbn", "tests", "docs", "README.md", "LICENSE", "CITATION.cff"]
+include = ["layerbn", "tests", "docs", "mkdocs.yml", "README.md", "LICENSE", "CITATION.cff"]
 
 [tool.ruff]
 line-length = 100
@@ -85,6 +93,12 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The report is mostly CSS and HTML in strings, which reads better unwrapped.
+"layerbn/report.py" = ["E501"]
+# The explorer page is likewise one HTML/CSS/JS template in a string.
+"layerbn/explorer.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

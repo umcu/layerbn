@@ -1,12 +1,24 @@
-"""Mutual-information rankings for interpretability.
+"""Mutual information and structural relations, for reading a learned network.
 
-Wraps `pyagrum.InformationTheory` to produce a sortable pandas Series
-of per-variable importance for a target outcome — either raw MI or
-conditional MI given the outcome's parents (i.e. what a variable adds
-beyond what's already captured by the outcome's Markov blanket).
+`mutual_information_scores` ranks variables by how much they tell you about a
+target, in bits, computed from the joint distribution of the network.
+
+`relations_to_target` says how each variable is connected to the target in
+the learned structure: as a parent, as a child, as a co-parent (a variable
+that shares a child with the target) or not directly.
+
+Mutual information alone does not say whether a variable is directly
+connected to the target or only related to it through other variables.
+Together the two give both pieces of information.
+
+Mutual information *given the target's parents* is deliberately not offered.
+In a Bayesian network every variable is independent of its non-descendants
+given its parents, so that quantity is exactly zero for everything except
+the target's descendants and says nothing about the data.
 """
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Iterable
 from typing import Any
 
@@ -20,65 +32,66 @@ def mutual_information_scores(
     exclude: Iterable[str] = (),
     verbose: bool = False,
 ) -> pd.Series:
-    """Rank variables by raw MI with `target`, computed on the joint BN.
+    """Mutual information (bits) of every other variable with `target`.
 
-    Returns a Series indexed by variable name, sorted descending. Variables
-    listed in `exclude` (plus `target` itself) are skipped.
+    Returns a Series indexed by column name, largest first. A variable for
+    which the computation fails gets `NaN`, so a gap is visible.
     """
     import pyagrum as gum
 
-    exclude_set = set(exclude) | {target}
-    candidates = [v for v in bn.names() if v not in exclude_set]
+    skipped = set(exclude) | {target}
     scores: dict[str, float] = {}
-    for var in candidates:
+    for column in (v for v in bn.names() if v not in skipped):
         try:
-            # A fresh engine per variable. `InformationTheory` restricts the
-            # engine it is given to the variables of that one query, so a
-            # shared engine answers the first variable and then raises
-            # "does not belong to this optimized inference" for every other.
-            it = gum.InformationTheory(gum.LazyPropagation(bn), target, [var])
-            scores[var] = it.mutualInformationXY()
+            # A new engine per variable: InformationTheory restricts the
+            # engine it is given to that query's variables, so a shared
+            # engine fails for every variable after the first.
+            info = gum.InformationTheory(gum.LazyPropagation(bn), target, [column])
+            scores[column] = max(info.mutualInformationXY(), 0.0)
         except Exception as exc:
             if verbose:
-                print(f"MI({var} → {target}) failed: {exc}")
-            scores[var] = float("nan")
-    return pd.Series(scores, name=f"MI(·; {target})").sort_values(ascending=False)
+                print(f"MI({column}; {target}) failed: {exc}")
+            scores[column] = float("nan")
+    return pd.Series(scores, name=f"MI with {target}").sort_values(
+        ascending=False, na_position="last")
 
 
-def conditional_mutual_information_scores(
-    bn: Any,
-    target: str,
-    *,
-    conditioning_set: Iterable[str] | None = None,
-    exclude: Iterable[str] = (),
-    verbose: bool = False,
-) -> pd.Series:
-    """Rank variables by CMI with `target` given `conditioning_set`.
+def relations_to_target(bn: Any, target: str) -> dict[str, tuple[str, int | None]]:
+    """For each variable: its relation to `target`, and its distance in arcs.
 
-    When `conditioning_set` is None, the target's parents in `bn` are used
-    — a standard "does this variable add anything beyond the Markov
-    blanket" check. Variables in the conditioning set are auto-excluded
-    from the ranking.
+    Relations: `parent`, `child`, `co-parent` (shares a child with the target),
+    `other`. The distance is the number of arcs on the shortest path between
+    the two variables, ignoring arc direction; `None` if they are not
+    connected at all.
     """
-    import pyagrum as gum
+    target_id = bn.idFromName(target)
+    name = bn.variable
+    parents = set(bn.parents(target_id))
+    children = set(bn.children(target_id))
+    coparents = {p for child in children for p in bn.parents(child)} - {target_id}
 
-    if conditioning_set is None:
-        target_id = bn.idFromName(target)
-        conditioning = [bn.variable(p).name() for p in bn.parents(target_id)]
-    else:
-        conditioning = list(conditioning_set)
+    neighbours: dict[int, set[int]] = {
+        i: set(bn.parents(i)) | set(bn.children(i)) for i in bn.nodes()}
+    distance = {target_id: 0}
+    queue = deque([target_id])
+    while queue:
+        current = queue.popleft()
+        for other in neighbours[current]:
+            if other not in distance:
+                distance[other] = distance[current] + 1
+                queue.append(other)
 
-    exclude_set = set(exclude) | {target} | set(conditioning)
-    candidates = [v for v in bn.names() if v not in exclude_set]
-    scores: dict[str, float] = {}
-    for var in candidates:
-        try:
-            # Fresh engine per variable — see `mutual_information_scores`.
-            it = gum.InformationTheory(
-                gum.LazyPropagation(bn), target, [var], conditioning)
-            scores[var] = it.mutualInformationXYgivenZ()
-        except Exception as exc:
-            if verbose:
-                print(f"CMI({var} → {target} | {conditioning}) failed: {exc}")
-            scores[var] = float("nan")
-    return pd.Series(scores, name=f"CMI(·; {target} | parents)").sort_values(ascending=False)
+    out: dict[str, tuple[str, int | None]] = {}
+    for i in bn.nodes():
+        if i == target_id:
+            continue
+        if i in parents:
+            relation = "parent"
+        elif i in children:
+            relation = "child"
+        elif i in coparents:
+            relation = "co-parent"
+        else:
+            relation = "other"
+        out[name(i).name()] = (relation, distance.get(i))
+    return out

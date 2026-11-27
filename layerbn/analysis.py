@@ -1,39 +1,27 @@
-"""One object that runs a whole analysis from a spec.
-
-The functions in `bn_utils`, `inference` and `plotting` each take the layer
-map, the discretisation, the score, the seed and the layer-role patterns as
-separate arguments. That is the right shape for a library, but it means a
-caller repeats the same eight settings at every call site and any one of
-them can silently disagree with the spec.
-
-`Analysis` closes that gap. It holds the spec and the data, and every method
-takes its settings from the spec:
+"""One object that runs a whole analysis from a project.
 
     from layerbn.analysis import Analysis
 
-    study = Analysis.from_files("spec.yml", "cohort.parquet")
-    bn = study.network("main")
-    edges = study.stable_edges("main")
-    risks = study.scenarios("main")
+    study = Analysis.from_files("settings.yml")
+    study.bins()                  # how every variable was binned
+    study.network("main")         # the learned network
+    study.stable_edges("main")    # how often each arc appears under resampling
+    study.importance("main")      # mutual information with the targets
+    study.profiles()              # outcome probabilities for the profiles
+    study.sweep()                 # one variable moved across its states
 
-Nothing here implements new statistics. Each method delegates to the same
-functions a direct caller would use, with the arguments filled in from the
-spec. Three things it does add, all of which are corrections rather than
-choices:
+Every method takes its settings from the project (`settings.yml` plus the
+design table). Tables use the labels from the design table and readable bin
+names. Internally everything is keyed by data column name.
 
-* **Evidence is resolved to state indices.** pyAgrum reads a bare integer as
-  a state index, so `AGE: 72` in a profile means "state number 72" and
-  raises. `bootstrap_scenario_risks` catches that and skips the scenario, so
-  the result is a missing row rather than an error. Resolving values here
-  makes `72` and `"72"` both mean the age 72, and reports anything it could
-  not match instead of dropping it.
-* **A fixed discretisation template is shared across bootstrap resamples.**
-  Otherwise each resample computes its own quantile edges, and a fixed
-  profile refers to a slightly different group of people in every resample.
-* **Long bootstraps report progress**, because a cell that prints nothing
-  for forty minutes is indistinguishable from a hung kernel.
+Three things happen here that a direct caller of `layerbn.bn_utils` would
+have to do by hand:
 
-See `docs/troubleshooting.md` for what the warnings mean.
+* Values in a profile (`AGE: 72`, `SEX: Female`) are converted to the bin or
+  category they belong to, and anything that cannot be matched is reported.
+* One discretisation is computed from the full data and shared by all
+  bootstrap resamples, so that a bin means the same thing in every resample.
+* Long bootstraps print progress, so a slow run can be told from a stuck one.
 """
 from __future__ import annotations
 
@@ -46,722 +34,704 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from layerbn._text import did_you_mean
 from layerbn.bn_utils import (
     bootstrap_edge_frequencies,
-    bootstrap_knob_sweep,
-    bootstrap_scenario_risks,
+    bootstrap_profile_risks,
+    bootstrap_sweep,
     build_bn,
+    descendants,
 )
-from layerbn.discretisation import describe_template, make_type_processor, state_for_value
-from layerbn.inference import (
-    conditional_mutual_information_scores,
-    mutual_information_scores,
+from layerbn.discretisation import (
+    MISSING,
+    describe_template,
+    make_type_processor,
+    pretty_labels,
+    state_for_value,
+    with_missing_category,
 )
-from layerbn.plotting import build_node_colors, default_layer_colors, plot_knob_sweep
-from layerbn.spec import Spec, check_against_dataframe, load_spec
+from layerbn.inference import mutual_information_scores, relations_to_target
+from layerbn.project import Network, Project, load_project
+
+
+class DataError(ValueError):
+    """Raised when the data file does not match the design."""
+
 
 # ---------------------------------------------------------------------------
-# progress reporting
+# progress
 # ---------------------------------------------------------------------------
 
 class _Progress:
-    """Print a one-line progress counter with an estimated finish time."""
+    """A one-line progress bar with an estimate of the time left."""
 
     def __init__(self, total: int, label: str, *, enabled: bool = True) -> None:
-        self.total = total
-        self.label = label
-        self.enabled = enabled
+        self.total, self.label, self.enabled = total, label, enabled
         self.count = 0
         self.start = time.monotonic()
 
-    def wrap(self, func: Any) -> Any:
-        """Return `func` with a progress tick attached to each call."""
-        if not self.enabled:
-            return func
-
-        def counted(*args: Any, **kwargs: Any) -> Any:
-            self.count += 1
-            self._draw()
-            return func(*args, **kwargs)
-
-        return counted
-
-    def _draw(self) -> None:
-        done = min(self.count, self.total)
-        elapsed = time.monotonic() - self.start
-        if done > 1:
-            remaining = elapsed / (done - 1) * (self.total - done)
-            eta = f"  ~{remaining / 60:.1f} min left" if remaining > 90 else \
-                  f"  ~{remaining:.0f} s left"
-        else:
-            eta = ""
-        bar_width = 24
-        filled = int(bar_width * done / max(self.total, 1))
-        bar = "#" * filled + "." * (bar_width - filled)
-        print(f"\r  {self.label}: [{bar}] {done}/{self.total}{eta}   ",
-              end="", file=sys.stdout, flush=True)
-
-    def finish(self) -> None:
+    def tick(self) -> None:
+        self.count += 1
         if not self.enabled:
             return
+        done = min(self.count, self.total)
+        # Redrawing one line with a carriage return only works in a terminal.
+        # Elsewhere (a log file, a notebook) print at every tenth of the way.
+        if not sys.stdout.isatty() and done != 1 and done % max(self.total // 10, 1):
+            return
         elapsed = time.monotonic() - self.start
-        print(f"\r  {self.label}: done, {self.total} fits in {elapsed / 60:.1f} min"
-              f"{' ' * 24}", file=sys.stdout, flush=True)
+        eta = ""
+        if done > 1:
+            remaining = elapsed / (done - 1) * (self.total - done)
+            eta = (f"  about {remaining / 60:.1f} min left" if remaining > 90
+                   else f"  about {remaining:.0f} s left")
+        filled = int(24 * done / max(self.total, 1))
+        line = (f"  {self.label}: [{'#' * filled}{'.' * (24 - filled)}] "
+                f"{done}/{self.total}{eta}")
+        if sys.stdout.isatty():
+            print(f"\r{line}   ", end="", file=sys.stdout, flush=True)
+        else:
+            print(line, file=sys.stdout, flush=True)
+
+    def finish(self) -> None:
+        if self.enabled:
+            minutes = (time.monotonic() - self.start) / 60
+            end = "\r" if sys.stdout.isatty() else ""
+            print(f"{end}  {self.label}: {self.total} resamples in {minutes:.1f} min"
+                  f"{' ' * 30 if end else ''}", file=sys.stdout, flush=True)
 
 
 # ---------------------------------------------------------------------------
-# the facade
-# ---------------------------------------------------------------------------
-
-class Analysis:
-    """A spec plus a dataframe, with every analysis step as one call.
-
-    Parameters
-    ----------
-    spec : Spec
-        Loaded via `layerbn.spec.load_spec`.
-    df : DataFrame
-        Analysis-ready and fully imputed. The package does no preprocessing;
-        see the scope note in the README.
-    verbose : bool
-        Print progress and warnings. Turn off for scripted runs.
-
-    Attributes
-    ----------
-    data_warnings : list of str
-        Mismatches between the spec's variables and the dataframe's columns,
-        from `check_against_dataframe`. Empty is what you want.
-    """
-
-    def __init__(self, spec: Spec, df: pd.DataFrame, *, verbose: bool = True) -> None:
-        self.spec = spec
-        self.source_df = df
-        self.verbose = verbose
-
-        self.type_processor = make_type_processor(
-            method=spec.discretisation.method,
-            n_bins=spec.discretisation.n_bins,
-            threshold=spec.discretisation.threshold,
-        )
-
-        self.data_warnings = check_against_dataframe(spec, df.columns)
-
-        # Use exactly the variables the spec declares. A column in no layer
-        # would otherwise reach the learner, where the layer constraint
-        # forbids every arc touching it, and it would appear in the figure
-        # as an isolated node. Dropping it here makes the network match the
-        # spec, which is what a reader of the spec expects.
-        missing = [v for v in spec.variables if v not in df.columns]
-        declared = [v for v in spec.variables if v in df.columns]
-        set_aside = [c for c in df.columns if c not in spec.variables]
-        self.df = df[declared].copy()
-
-        if self.verbose:
-            if missing:
-                print(f"MISSING from the data ({len(missing)}): {missing}\n"
-                      "  These are declared in the spec but are not columns in the "
-                      "dataframe. They cannot be modelled. Fix the spec or the data.")
-            if set_aside:
-                print(f"Not in any layer, set aside ({len(set_aside)}): {set_aside}\n"
-                      "  Add them to a layer in the spec if they belong in the network.")
-
-        self._networks: dict[str, Any] = {}
-        self._templates: dict[str, Any] = {}
-        self._edge_freqs: dict[str, dict[tuple[str, str], float]] = {}
-
-    # -- construction ------------------------------------------------------
-
-    @classmethod
-    def from_files(
-        cls,
-        spec_path: str | Path,
-        data_path: str | Path,
-        *,
-        verbose: bool = True,
-    ) -> Analysis:
-        """Load a spec and a dataframe from disk.
-
-        `data_path` may be any format pandas reads by extension: `.parquet`,
-        `.csv`, `.feather`, or `.sav` if `pyreadstat` is installed.
-        """
-        spec = load_spec(spec_path)
-        return cls(spec, read_table(data_path), verbose=verbose)
-
-    # -- the settings every call shares ------------------------------------
-
-    def _build_kwargs(self, variant_name: str, **overrides: Any) -> dict[str, Any]:
-        """Every `build_bn` argument this variant implies, from the spec.
-
-        Collecting them in one place is the point of this class: the layer
-        role patterns in particular are easy to omit at a call site, and
-        omitting them silently falls back to matching the layer names
-        against the strings "Outcomes" and "Dropout".
-        """
-        variant = self.spec.variant(variant_name)
-        constraints = self.spec.constraints
-        kwargs: dict[str, Any] = {
-            "score": self.spec.model.score,
-            "use_tabu": self.spec.model.use_tabu,
-            "max_indegree": self.spec.model.max_indegree,
-            "exclude_layers": list(variant.exclude_layers),
-            "outcome_patterns": self.spec.outcome_patterns,
-            "dropout_patterns": self.spec.dropout_patterns,
-            # From `constraints` in the spec. Omitting these would silently
-            # fall back to the built-in conventions, which is exactly the
-            # failure this class exists to prevent.
-            "within_layers": constraints.within_layers,
-            "arcs_between_outcomes": constraints.arcs_between_outcomes,
-            "selection_parents": constraints.selection_parents,
-            "forbidden_pairs": self.spec.forbidden_pairs,
-            "mandatory_pairs": self.spec.mandatory_pairs,
-            "no_parents": constraints.no_parents,
-            "no_children": constraints.no_children,
-        }
-        kwargs.update(overrides)
-        return kwargs
-
-    def _reduced_frame(self, variant_name: str) -> pd.DataFrame:
-        """The columns `build_bn` will actually learn on, for this variant.
-
-        Mirrors the reduction inside `build_bn`, but uses the spec's layer
-        roles rather than the default name patterns, so it is correct
-        whatever a cohort calls its layers.
-        """
-        variant = self.spec.variant(variant_name)
-        excluded = [
-            v for layer in variant.exclude_layers
-            for v in self.spec.layer_map.get(layer, [])
-        ]
-        outcome_layer_vars = [
-            v for layer in self.spec.layers
-            if layer.role in ("outcome", "selection")
-            for v in layer.variables
-        ]
-        unused_outcomes = [v for v in outcome_layer_vars if v not in variant.outcomes]
-        return self.df.drop(columns=unused_outcomes + excluded, errors="ignore")
-
-    def template(self, variant_name: str) -> Any:
-        """The discretisation template for a variant, computed once.
-
-        Sharing one template across bootstrap resamples keeps the bin edges
-        fixed, so a state label means the same thing in every resample.
-        """
-        if variant_name not in self._templates:
-            self._templates[variant_name] = self.type_processor.discretizedTemplate(
-                self._reduced_frame(variant_name)
-            )
-        return self._templates[variant_name]
-
-    def bins(self, variant_name: str | None = None) -> pd.DataFrame:
-        """The state labels each variable was discretised into.
-
-        Worth reading before interpreting anything else: every result is
-        conditional on these bin edges.
-        """
-        variant_name = variant_name or self.spec.variants[0].name
-        return describe_template(self.template(variant_name))
-
-    # -- structure ---------------------------------------------------------
-
-    def network(self, variant_name: str, *, refresh: bool = False, **overrides: Any) -> Any:
-        """Learn (and cache) the network for one variant of the spec.
-
-        Parameters
-        ----------
-        variant_name : str
-            A `name` from the spec's `variants` list.
-        refresh : bool
-            Relearn even if the network is already cached.
-        **overrides
-            Passed to `build_bn`, replacing the spec's value. Use sparingly:
-            a result produced with an override is not described by the spec.
-        """
-        if refresh or variant_name not in self._networks or overrides:
-            variant = self.spec.variant(variant_name)
-            bn = build_bn(
-                self.df,
-                outcomes=list(variant.outcomes),
-                layer_map=self.spec.layer_map,
-                type_processor=self.type_processor,
-                random_seed=self.spec.model.seed,
-                fixed_template=self.template(variant_name),
-                **self._build_kwargs(variant_name, **overrides),
-            )
-            if overrides:
-                return bn
-            self._networks[variant_name] = bn
-        return self._networks[variant_name]
-
-    def edge_frequencies(
-        self,
-        variant_name: str,
-        *,
-        refresh: bool = False,
-        **overrides: Any,
-    ) -> dict[tuple[str, str], float]:
-        """Bootstrap arc stability: the fraction of resamples containing each arc.
-
-        This is the expensive step. The result is cached per variant, so
-        asking for it again — for a table and then for a figure — costs
-        nothing. Pass `refresh=True` to recompute.
-        """
-        if not refresh and not overrides and variant_name in self._edge_freqs:
-            return self._edge_freqs[variant_name]
-
-        variant = self.spec.variant(variant_name)
-        n = self.spec.bootstrap_for(variant_name)
-        progress = _Progress(n, f"edge stability [{variant_name}]", enabled=self.verbose)
-        try:
-            result = bootstrap_edge_frequencies(
-                self.df,
-                outcomes=list(variant.outcomes),
-                layer_map=self.spec.layer_map,
-                type_processor=self.type_processor,
-                build_bn_func=progress.wrap(build_bn),
-                n_bootstraps=n,
-                random_seed=self.spec.model.seed,
-                fixed_template=self.template(variant_name),
-                **self._build_kwargs(variant_name, **overrides),
-            )
-        finally:
-            progress.finish()
-        if not overrides:
-            self._edge_freqs[variant_name] = result
-        return result
-
-    def stable_edges(
-        self,
-        variant_name: str,
-        *,
-        min_frequency: float = 0.0,
-        **overrides: Any,
-    ) -> pd.DataFrame:
-        """Arc stability as a sorted table, ready to report.
-
-        Columns: `Parent`, `Child`, `Frequency`, `In network`. `In network`
-        says whether the arc is in the network learned from the full data,
-        which is not the same question as how often it survives resampling.
-
-        Parameters
-        ----------
-        min_frequency : float
-            Drop arcs appearing in a smaller fraction of resamples. There is
-            no principled threshold; 0.5 and 0.8 are both defensible and both
-            arbitrary, so report the frequency rather than only the survivors.
-        """
-        frequencies = self.edge_frequencies(variant_name, **overrides)
-        bn = self.network(variant_name)
-        in_network = {
-            (bn.variable(p).name(), bn.variable(c).name()) for p, c in bn.arcs()
-        }
-        rows = [
-            {
-                "Parent": parent,
-                "Child": child,
-                "Frequency": frequency,
-                "In network": (parent, child) in in_network,
-            }
-            for (parent, child), frequency in frequencies.items()
-            if frequency >= min_frequency
-        ]
-        table = pd.DataFrame(rows, columns=["Parent", "Child", "Frequency", "In network"])
-        return table.sort_values("Frequency", ascending=False).reset_index(drop=True)
-
-    # -- interpretation ----------------------------------------------------
-
-    def information(
-        self,
-        variant_name: str,
-        *,
-        targets: Sequence[str] | None = None,
-    ) -> pd.DataFrame:
-        """Rank variables by mutual information with each spec target.
-
-        Returns one row per (target, variable), with columns:
-
-        `MI`
-            Mutual information with the target. How much the variable tells
-            you about the outcome on its own.
-        `CMI`
-            Mutual information given the target's parents in the network.
-            What the variable adds *beyond* the variables already adjacent
-            to the outcome. A high `MI` with a near-zero `CMI` means the
-            variable is explained away by the target's parents.
-        `Is parent`
-            Whether the variable is itself a parent of the target. `CMI` is
-            undefined for those, since they make up the conditioning set,
-            so it is left empty rather than reported as zero.
-
-        Values within floating-point noise of zero are rounded to zero;
-        mutual information cannot be negative.
-        """
-        bn = self.network(variant_name)
-        targets = list(targets if targets is not None else self.spec.information_targets)
-        if not targets:
-            raise ValueError(
-                "No targets to rank. Add `analyses.information.targets` to the "
-                "spec, or pass targets= explicitly."
-            )
-
-        frames = []
-        for target in targets:
-            if target not in bn.names():
-                if self.verbose:
-                    print(f"  - {target!r} is not in the {variant_name!r} network; skipped.")
-                continue
-            parents = {
-                bn.variable(p).name() for p in bn.parents(bn.idFromName(target))
-            }
-            mi = mutual_information_scores(bn, target)
-            cmi = conditional_mutual_information_scores(bn, target)
-            frame = pd.DataFrame({"MI": mi, "CMI": cmi})
-            # Both quantities are non-negative; anything below this is the
-            # accumulated error of summing over the joint distribution.
-            frame = frame.mask(frame.abs() < 1e-12, 0.0)
-            frame.insert(0, "Target", target)
-            frame.insert(1, "Variable", frame.index)
-            frame["Is parent"] = frame["Variable"].isin(parents)
-            frames.append(frame.reset_index(drop=True))
-
-        if not frames:
-            return pd.DataFrame(
-                columns=["Target", "Variable", "MI", "CMI", "Is parent"]
-            )
-        return (pd.concat(frames, ignore_index=True)
-                .sort_values(["Target", "MI"], ascending=[True, False])
-                .reset_index(drop=True))
-
-    # -- evidence ----------------------------------------------------------
-
-    def resolve_profile(
-        self,
-        variant_name: str,
-        profile: Mapping[str, Any],
-        *,
-        label: str = "profile",
-    ) -> dict[str, int]:
-        """Turn a spec profile into state indices the inference engine accepts.
-
-        `AGE: 72`, `AGE: "72"` and `AGE: 72.0` all resolve to the bin holding
-        the age 72. Values that cannot be matched are reported and omitted
-        rather than silently discarding the whole profile.
-        """
-        bn = self.network(variant_name)
-        applied: dict[str, int] = {}
-        snapped: list[str] = []
-        rejected: list[str] = []
-
-        for variable, value in profile.items():
-            if variable not in bn.names():
-                rejected.append(
-                    f"{variable}={value!r} (not a variable in the "
-                    f"{variant_name!r} network — excluded by a layer, or misspelt)"
-                )
-                continue
-            labels = list(bn.variable(bn.idFromName(variable)).labels())
-            state = state_for_value(labels, value)
-            if state is None:
-                rejected.append(
-                    f"{variable}={value!r} (no matching state; states are {labels})"
-                )
-                continue
-            applied[variable] = labels.index(state)
-            if str(value) != state:
-                snapped.append(f"{variable}: {value!r} -> {state}")
-
-        if self.verbose:
-            if snapped:
-                print(f"  {label} — snapped to bins: " + "; ".join(snapped))
-            if rejected:
-                print(f"  {label} — NOT APPLIED: " + "; ".join(rejected))
-        return applied
-
-    def scenarios(self, variant_name: str, **overrides: Any) -> pd.DataFrame:
-        """Posterior outcome probabilities for the spec's profiles, with CIs.
-
-        One row per (profile, outcome, outcome state) with the bootstrap mean
-        and a 95% percentile interval. The interval covers uncertainty in the
-        structure and the parameters, because each resample relearns both.
-        """
-        scenarios = self.spec.scenarios
-        if not scenarios.profiles:
-            raise ValueError(
-                "No profiles to evaluate. Add `analyses.scenarios.profiles` to the spec."
-            )
-        if not scenarios.targets:
-            raise ValueError(
-                "No outcomes to report. Add `analyses.scenarios.targets` to the spec."
-            )
-
-        variant = self.spec.variant(variant_name)
-        n = scenarios.bootstrap_n or self.spec.bootstrap_for(variant_name)
-        resolved = [
-            (name, self.resolve_profile(variant_name, evidence, label=name))
-            for name, evidence in scenarios.profiles
-        ]
-        empty = [name for name, evidence in resolved if not evidence]
-        if empty:
-            raise ValueError(
-                f"No evidence could be applied for profile(s) {empty}. "
-                "Check the variable names and values against `study.bins()`."
-            )
-
-        progress = _Progress(n, f"scenarios [{variant_name}]", enabled=self.verbose)
-        try:
-            result = bootstrap_scenario_risks(
-                self.df,
-                scenario_profiles=resolved,
-                target_outcomes=list(scenarios.targets),
-                layer_map=self.spec.layer_map,
-                type_processor=self.type_processor,
-                outcomes_for_learning=list(variant.outcomes),
-                build_bn_func=progress.wrap(build_bn),
-                n_bootstraps=n,
-                random_seed=self.spec.model.seed,
-                fixed_template=self.template(variant_name),
-                **self._build_kwargs(variant_name, **overrides),
-            )
-        finally:
-            progress.finish()
-        return result
-
-    def knob_sweep(
-        self,
-        variant_name: str,
-        **overrides: Any,
-    ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Vary one variable across its states, holding a profile fixed.
-
-        Returns `(table, meta)`; pass both to `plot_sweep`. Warns when the
-        fixed profile includes a variable downstream of the swept one, which
-        blocks part of the effect being measured.
-        """
-        sweep = self.spec.knob_sweep
-        if not sweep.knob:
-            raise ValueError(
-                "No sweep declared. Add `analyses.knob_sweep` to the spec."
-            )
-
-        variant = self.spec.variant(variant_name)
-        n = sweep.bootstrap_n or self.spec.bootstrap_for(variant_name)
-        progress = _Progress(n, f"sweep [{sweep.knob}]", enabled=self.verbose)
-        try:
-            result = bootstrap_knob_sweep(
-                self.df,
-                base_profile=dict(sweep.base_profile),
-                knob=sweep.knob,
-                outcomes=list(sweep.outcomes),
-                outcomes_for_learning=list(variant.outcomes),
-                layer_map=self.spec.layer_map,
-                type_processor=self.type_processor,
-                build_bn_func=progress.wrap(build_bn),
-                n_bootstraps=n,
-                random_seed=self.spec.model.seed,
-                verbose=self.verbose,
-                **self._build_kwargs(variant_name, **overrides),
-            )
-        finally:
-            progress.finish()
-        return result
-
-    # -- figures -----------------------------------------------------------
-
-    def node_colors(self, variant_name: str) -> dict[str, float]:
-        """Colour value per variable, one shade per layer, in spec order."""
-        return build_node_colors(
-            self.network(variant_name),
-            self.spec.layer_map,
-            default_layer_colors(self.spec.layer_order),
-        )
-
-    def arc_widths(
-        self,
-        variant_name: str,
-        *,
-        scale: float = 3.0,
-        floor: float = 0.5,
-    ) -> dict[tuple[int, int], float]:
-        """Line width per arc, on the square root of its mutual information.
-
-        Keyed by node id, which is what pyAgrum's renderer expects. The
-        square root compresses the range so that one dominant arc does not
-        render every other arc as a hairline.
-        """
-        import pyagrum as gum
-
-        bn = self.network(variant_name)
-
-        raw: dict[tuple[int, int], float] = {}
-        for parent, child in bn.arcs():
-            try:
-                # A fresh engine per arc. `InformationTheory` restricts the
-                # engine it is handed to that one query's variables, so a
-                # shared engine answers some pairs and raises "does not
-                # belong to this optimized inference" for others, depending
-                # on the join tree. Whichever ones fail would silently take
-                # the placeholder width below and look uninformative.
-                # A new engine costs well under a millisecond per arc.
-                info = gum.InformationTheory(
-                    gum.LazyPropagation(bn), child, [parent])
-                raw[(parent, child)] = max(info.mutualInformationXY(), 0.0)
-            except Exception:
-                raw[(parent, child)] = 0.1
-
-        largest = max(raw.values(), default=0.0)
-        if largest <= 0:
-            return {arc: floor + scale / 2 for arc in raw}
-        return {
-            arc: float(np.sqrt(value) / np.sqrt(largest) * scale + floor)
-            for arc, value in raw.items()
-        }
-
-    def draw(
-        self,
-        variant_name: str,
-        *,
-        stability: bool = False,
-        save_path: str | Path | None = None,
-        **kwargs: Any,
-    ) -> Any:
-        """Draw the network, coloured by layer, optionally writing a file.
-
-        Parameters
-        ----------
-        stability : bool
-            Also encode the bootstrap results: arc width from mutual
-            information, arc colour and an `f=NN%` label from the fraction
-            of resamples containing the arc. This calls `edge_frequencies`,
-            so the first use is slow and later ones are cached.
-        save_path : path, optional
-            Write the figure as well as displaying it. The format follows
-            the extension; use `.pdf` for a figure you intend to edit.
-        **kwargs
-            Passed to pyAgrum's renderer (`size`, `cmapNode`, `cmapArc`,
-            ...), overriding anything set here.
-        """
-        from pyagrum.lib import notebook as gnb
-
-        bn = self.network(variant_name)
-        options: dict[str, Any] = {"nodeColor": self.node_colors(variant_name)}
-
-        if stability:
-            frequencies = self.edge_frequencies(variant_name)
-            names = set(bn.names())
-            by_id = {
-                (bn.idFromName(parent), bn.idFromName(child)): frequency
-                for (parent, child), frequency in frequencies.items()
-                if parent in names and child in names
-            }
-            options["arcWidth"] = self.arc_widths(variant_name)
-            options["arcColor"] = {arc: by_id.get(arc, 0.0) for arc in bn.arcs()}
-            options["arcLabel"] = {
-                arc: f"f={round(by_id.get(arc, 0.0) * 100)}%" for arc in bn.arcs()
-            }
-
-        options.update(kwargs)
-
-        if save_path is not None:
-            from pyagrum.lib import image as gumimage
-            save_path = Path(save_path)
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            gumimage.export(bn, str(save_path), **options)
-            if self.verbose:
-                print(f"Saved {save_path}")
-        return gnb.showBN(bn, **options)
-
-    @staticmethod
-    def plot_sweep(table: pd.DataFrame, meta: dict[str, Any]) -> None:
-        """Plot the output of `knob_sweep`."""
-        plot_knob_sweep(table, meta)
-
-    # -- reporting ---------------------------------------------------------
-
-    def summary(self) -> str:
-        """A plain-text description of what the spec declares."""
-        lines = [
-            f"Spec:      {self.spec.name}  ({self.spec.source})",
-            f"Data:      {len(self.df)} rows x {len(self.df.columns)} columns",
-            f"Layers:    {len(self.spec.layers)}, in this order (arcs run downwards)",
-        ]
-        for i, layer in enumerate(self.spec.layers):
-            role = "" if layer.role == "covariate" else f"  [{layer.role}]"
-            lines.append(f"             {i}. {layer.name}{role}")
-            lines.append(f"                {', '.join(layer.variables)}")
-        lines += [
-            f"Bins:      {self.spec.discretisation.n_bins} "
-            f"{self.spec.discretisation.method} bins for numeric variables "
-            f"with more than {self.spec.discretisation.threshold} distinct values",
-            f"Learner:   {self.spec.model.score}, "
-            f"{'tabu search' if self.spec.model.use_tabu else 'greedy hill climbing'}, "
-            f"max {self.spec.model.max_indegree} parents per variable, "
-            f"seed {self.spec.model.seed}",
-            f"Bootstrap: {self.spec.bootstrap_n} resamples",
-            "Variants:",
-        ]
-        for variant in self.spec.variants:
-            excluded = (f", excluding {list(variant.exclude_layers)}"
-                        if variant.exclude_layers else "")
-            lines.append(f"             {variant.name}: "
-                         f"outcomes {list(variant.outcomes)}{excluded}")
-
-        constraints = self.spec.constraints
-        lines.append("Arcs:")
-        lines.append("             only downstream through the layer order above")
-        lines.append(f"             within a layer: "
-                     f"{'allowed' if constraints.within_layers else 'forbidden'}")
-        lines.append(f"             between outcomes: "
-                     f"{'allowed' if constraints.arcs_between_outcomes else 'forbidden'}")
-        if self.spec.layers_with_role("selection"):
-            lines.append(f"             into the selection layer: from "
-                         f"{constraints.selection_parents}")
-        for label, pairs in (("forbidden", self.spec.forbidden_pairs),
-                             ("required", self.spec.mandatory_pairs)):
-            if pairs:
-                lines.append(f"             {label} ({len(pairs)}):")
-                lines += [f"               {p} -> {c}" for p, c in sorted(pairs)]
-        if constraints.no_parents:
-            lines.append(f"             no parents: {list(constraints.no_parents)}")
-        if constraints.no_children:
-            lines.append(f"             no children: {list(constraints.no_children)}")
-        if self.data_warnings:
-            lines.append("Warnings:")
-            lines += [f"             - {w}" for w in self.data_warnings]
-        return "\n".join(lines)
-
-    def __repr__(self) -> str:
-        return (f"<Analysis spec={self.spec.name!r} rows={len(self.df)} "
-                f"variants={[v.name for v in self.spec.variants]}>")
-
-
-# ---------------------------------------------------------------------------
-# data loading
+# reading data
 # ---------------------------------------------------------------------------
 
 _READERS = {
-    ".parquet": "read_parquet",
-    ".csv": "read_csv",
-    ".tsv": "read_csv",
-    ".feather": "read_feather",
-    ".sav": "read_spss",
-    ".dta": "read_stata",
-    ".xlsx": "read_excel",
+    ".parquet": "read_parquet", ".csv": "read_csv", ".tsv": "read_csv",
+    ".feather": "read_feather", ".sav": "read_spss", ".dta": "read_stata",
+    ".xlsx": "read_excel", ".xls": "read_excel",
 }
 
 
 def read_table(path: str | Path) -> pd.DataFrame:
-    """Read a dataframe, choosing the reader from the file extension."""
+    """Read a data table; the reader is chosen from the file extension."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
             f"data file not found: {path}\n"
-            "`data.path` in the spec is resolved relative to the working "
-            "directory unless you pass an absolute path."
-        )
+            "A relative path is taken relative to the folder of settings.yml. "
+            "You can also pass the file on the command line with --data.")
     reader = _READERS.get(path.suffix.lower())
     if reader is None:
-        raise ValueError(
-            f"do not know how to read {path.suffix!r}. "
-            f"Supported: {sorted(_READERS)}"
-        )
+        raise ValueError(f"cannot read {path.suffix!r} files. "
+                         f"Supported: {sorted(_READERS)}")
     kwargs = {"sep": "\t"} if path.suffix.lower() == ".tsv" else {}
     return getattr(pd, reader)(path, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# the analysis
+# ---------------------------------------------------------------------------
+
+class Analysis:
+    """A project plus its data, with every analysis step as one call.
+
+    Parameters
+    ----------
+    project : Project
+        From `layerbn.project.load_project`.
+    df : DataFrame
+        One row per participant, one column per variable.
+    verbose : bool
+        Print progress and notes. Turn off for scripts.
+
+    Attributes
+    ----------
+    df : DataFrame
+        The data actually analysed: the declared variables, complete cases
+        if `data.missing` is `drop_rows`.
+    notes : list of str
+        Everything worth knowing that is not an error: columns that were not
+        used, rows that were dropped, values that were placed in a bin,
+        resamples that failed. These are also written to the report.
+    """
+
+    def __init__(self, project: Project, df: pd.DataFrame, *, verbose: bool = True) -> None:
+        self.project = project
+        self.design = project.design
+        self.verbose = verbose
+        self.notes: list[str] = []
+
+        self.fixed_states: dict[str, list[str]] = {}
+        self._bin_overrides: dict[str, int] = {}
+        self.df, self.n_input = self._prepare(df)
+        self.n = len(self.df)
+
+        self._reset_discretisation()
+
+        self._templates: dict[str, Any] = {}
+        self._networks: dict[str, Any] = {}
+        self._edge_freqs: dict[str, dict[tuple[str, str], float]] = {}
+        self._strengths: dict[str, dict[tuple[str, str], float]] = {}
+
+    # -- construction --------------------------------------------------------
+
+    def _reset_discretisation(self) -> None:
+        """(Re)build the binning and forget everything learned with the old one."""
+        self.type_processor = make_type_processor(
+            self.df, self._design_with_overrides(), self.project.settings.discretisation,
+            fixed_states=self.fixed_states)
+        self._templates = {}
+        self._networks = {}
+        self._edge_freqs = {}
+        self._strengths = {}
+
+    def _design_with_overrides(self) -> Any:
+        if not self._bin_overrides:
+            return self.design
+        from dataclasses import replace
+        variables = tuple(
+            replace(v, bins=self._bin_overrides[v.column], cutpoints=())
+            if v.column in self._bin_overrides else v for v in self.design.variables)
+        return replace(self.design, variables=variables)
+
+    def set_bins(self, bins: Mapping[str, int] | int | None = None,
+                 **per_variable: int) -> Analysis:
+        """Choose the number of bins per variable, e.g. 4 for quartiles, 5 for quintiles.
+
+        `study.set_bins({"AGE": 5, "MEASURE_1": 4})`, or `study.set_bins(5)` for every
+        continuous variable. Variables are named by column or label. This replaces
+        bins and cut points from the design table for those variables, and
+        discards networks learned with the old bins, so learn again afterwards.
+        Returns the analysis, so calls can be chained.
+        """
+        if isinstance(bins, int):
+            bins = {v.column: bins for v in self.design.variables
+                    if v.kind == "continuous" or (v.kind is None and pd.api.types.is_numeric_dtype(
+                        self.df[v.column]) and self.df[v.column].nunique()
+                        > self.project.settings.discretisation.categorical_max_levels)}
+        for name, k in {**(bins or {}), **per_variable}.items():
+            if int(k) < 2:
+                raise ValueError(f"{name}: at least 2 bins are needed, got {k}.")
+            self._bin_overrides[self.design.resolve_variable(name)] = int(k)
+        if self.project.settings.data.missing == "category":
+            self.df, self.fixed_states = self._with_missing_states(self._raw)
+        self._reset_discretisation()
+        return self
+
+    @classmethod
+    def from_files(cls, settings_path: str | Path,
+                   data_path: str | Path | None = None, *,
+                   verbose: bool = True) -> Analysis:
+        """Load the project, then the data file named in it (or `data_path`)."""
+        project = load_project(settings_path)
+        return cls(project, read_table(project.data_path(data_path)), verbose=verbose)
+
+    def _note(self, message: str) -> None:
+        self.notes.append(message)
+        if self.verbose:
+            print(f"  note: {message}")
+
+    def _prepare(self, df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        """Check the data against the design and return what will be analysed."""
+        design = self.design
+        missing, unused = design.check_columns(df.columns)
+        if missing:
+            lines = []
+            for column in missing:
+                hint = did_you_mean(column, df.columns)
+                lines.append(f"  {column}" + (f"  {hint.strip().replace('Did you mean', 'is it')}"
+                                               if hint else ""))
+            raise DataError(
+                f"{len(missing)} variable(s) in the design table are not columns "
+                "of the data file:\n" + "\n".join(lines[:25])
+                + ("\n  ..." if len(lines) > 25 else "")
+                + "\nColumn names must match exactly, including capital letters and "
+                  "spaces."
+                + (" For repeated measures the column is built from the pattern "
+                   f"{design.column_pattern!r} (setting data.column_pattern)."
+                   if design.timepoints else ""))
+        if unused:
+            self._note(f"{len(unused)} column(s) of the data file are not in the design "
+                       f"table and are not used: {unused[:10]}"
+                       f"{' ...' if len(unused) > 10 else ''}")
+
+        data = df[design.columns].copy()
+        n_input = len(data)
+
+        absent = data.isna().sum()
+        absent = absent[absent > 0]
+        if len(absent):
+            if self.project.settings.data.missing == "category":
+                self._raw = data
+                worst = ", ".join(f"{design.label(c)} ({k / n_input:.0%})"
+                                  for c, k in absent.sort_values(ascending=False).head(10).items())
+                self._note(f"{len(absent)} variable(s) have missing values, kept as a "
+                           f"'{MISSING}' state (data.missing: category): {worst}")
+            elif self.project.settings.data.missing == "drop_rows":
+                data = data.dropna()
+                self._note(
+                    f"{n_input - len(data)} of {n_input} participants have a missing "
+                    f"value in at least one variable and were removed (data.missing: "
+                    f"drop_rows). {len(data)} remain.")
+            else:
+                worst = absent.sort_values(ascending=False).head(15)
+                table = "\n".join(
+                    f"  {design.label(c)}: {int(k)} missing ({k / n_input:.0%})"
+                    for c, k in worst.items())
+                raise DataError(
+                    f"The data has missing values in {len(absent)} variable(s):\n"
+                    f"{table}\n"
+                    "The network is learned from complete data. Either fill in or "
+                    "impute the values before the analysis, or set `data: missing: "
+                    "drop_rows` in settings.yml to analyse the participants who "
+                    "have all values (which can bias results if values are not "
+                    "missing at random).")
+
+        constant = [c for c in data.columns if data[c].nunique(dropna=True) < 2]
+        if constant:
+            raise DataError(
+                "These variables have only one value in the data, so they carry no "
+                f"information: {[design.label(c) for c in constant]}. Remove them "
+                "from the design table.")
+
+        for v in design.variables:
+            if v.kind == "continuous" and not pd.api.types.is_numeric_dtype(data[v.column]):
+                raise DataError(
+                    f"{v.label}: type is 'continuous' but the column is not numeric "
+                    f"(it contains {data[v.column].iloc[0]!r}, for example).")
+        data = self._whole_numbers_as_integers(data)
+        if self.project.settings.data.missing == "category":
+            self._raw = data
+            data, self.fixed_states = self._with_missing_states(data)
+        if len(data) < 50:
+            self._note(f"Only {len(data)} participants. Structure learning from so "
+                       "few is unreliable.")
+        return data.reset_index(drop=True), n_input
+
+    def _with_missing_states(self, data: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, list[str]]]:
+        """Give every variable with missing values a `Missing` state."""
+        base = self.project.settings.discretisation
+        data, states = data.copy(), {}
+        for v in self.design.variables:
+            if not data[v.column].isna().any():
+                continue
+            bins = self._bin_overrides.get(v.column, v.bins)
+            data[v.column], states[v.column] = with_missing_category(
+                data[v.column], kind=v.kind, bins=bins,
+                cutpoints=() if v.column in self._bin_overrides else v.cutpoints,
+                method=base.method, default_bins=base.bins,
+                categorical_max_levels=base.categorical_max_levels)
+        return data, states
+
+    def _whole_numbers_as_integers(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Store whole-number categories as integers, so they are named `6`, not `6.0`.
+
+        A column that is read as floats (because Excel or a missing value made it
+        so) would otherwise get the category names `6.0`, `7.0`, and a profile
+        value written as `6` would not match. This applies to columns that are
+        used as categories: those marked `categorical`, and numeric columns with
+        few distinct values that are not binned.
+        """
+        limit = self.project.settings.discretisation.categorical_max_levels
+        for v in self.design.variables:
+            column = data[v.column]
+            if not pd.api.types.is_float_dtype(column):
+                continue
+            binned_by_choice = v.kind == "continuous" or v.bins is not None or v.cutpoints
+            as_categories = v.kind == "categorical" or (
+                v.kind is None and not binned_by_choice and column.nunique() <= limit)
+            if as_categories and (column == column.round()).all():
+                data[v.column] = column.astype("int64")
+        return data
+
+    # -- naming ----------------------------------------------------------------
+
+    def label(self, column: str) -> str:
+        return self.design.label(column)
+
+    def _states(self, network_name: str, column: str) -> dict[str, str]:
+        """`{raw state: readable state}` for one variable."""
+        template = self.template(network_name)
+        labels = list(template.variable(template.idFromName(column)).labels())
+        return pretty_labels(labels)
+
+    # -- settings shared by every learning call ------------------------------
+
+    def _network_def(self, name: str | None) -> Network:
+        return self.project.network(name)
+
+    def _learn_kwargs(self, network: Network) -> dict[str, Any]:
+        p, s = self.project, self.project.settings
+        return {
+            "layer_map": {k: list(v) for k, v in network.layer_map.items()},
+            "type_processor": self.type_processor,
+            "score": s.learning.score,
+            "search": s.learning.search,
+            "max_parents": s.learning.max_parents,
+            "no_inner_arcs": [n for n in network.layer_map
+                              if not p.arcs_within(n)],
+            "forbidden_pairs": p.forbidden_pairs,
+            "mandatory_pairs": p.mandatory_pairs,
+            "no_parents": p.no_parents,
+            "no_children": p.no_children,
+            "fixed_template": self.template(network.name),
+        }
+
+    def template(self, network_name: str) -> Any:
+        """The discretisation of one network, computed once from the full data."""
+        if network_name not in self._templates:
+            network = self._network_def(network_name)
+            self._templates[network_name] = self.type_processor.discretizedTemplate(
+                self.df[list(network.columns)])
+        return self._templates[network_name]
+
+    def bins(self, network: str | None = None) -> pd.DataFrame:
+        """How every variable was binned. Read this before the results."""
+        network = self._network_def(network).name
+        return describe_template(self.template(network), self.design)
+
+    # -- structure -----------------------------------------------------------
+
+    def network(self, name: str | None = None, *, refresh: bool = False) -> Any:
+        """Learn (and keep) the network of one entry in `networks`."""
+        definition = self._network_def(name)
+        if refresh or definition.name not in self._networks:
+            kwargs = self._learn_kwargs(definition)
+            layer_map = kwargs.pop("layer_map")
+            type_processor = kwargs.pop("type_processor")
+            self._networks[definition.name] = build_bn(
+                self.df, layer_map, type_processor,
+                seed=self.project.settings.learning.seed, **kwargs)
+        return self._networks[definition.name]
+
+    def explore(self, network: str | None = None, *, path: str | Path | None = None,
+                stability: bool = False, evidence: Mapping[str, Any] | None = None) -> Any:
+        """Interactive network: distributions inside the nodes, click to set evidence.
+
+        Shows itself in a notebook. With `path` it is also written as one
+        HTML file that opens in any browser. `stability=True` colours arcs by
+        their bootstrap frequency (runs the bootstrap if not done yet).
+        `evidence` can start the page with states chosen, e.g. `{"AGE": "≥ 72"}`.
+        """
+        from layerbn.explorer import Explorer, explorer_html, explorer_model
+        definition = self._network_def(network)
+        start = {}
+        for name, value in (evidence or {}).items():
+            column = self.design.resolve_variable(name)
+            labels = list(self.template(definition.name).variable(column).labels())
+            raw = state_for_value(labels, value)
+            pretty = self._states(definition.name, column)
+            if raw is not None:
+                start[column] = [pretty[raw]]
+        page = Explorer(explorer_html(
+            explorer_model(self, definition.name, stability=stability), start))
+        if path is not None:
+            page.save(path)
+        return page
+
+    def arcs(self, name: str | None = None) -> list[tuple[str, str]]:
+        """The arcs of a network as `(parent column, child column)`."""
+        bn = self.network(name)
+        return [(bn.variable(p).name(), bn.variable(c).name()) for p, c in bn.arcs()]
+
+    def edge_frequencies(self, name: str | None = None, *,
+                         refresh: bool = False) -> dict[tuple[str, str], float]:
+        """Fraction of bootstrap resamples that contain each arc.
+
+        This is the slow step, and the result is kept, so asking again for a
+        table and then a figure costs nothing.
+        """
+        definition = self._network_def(name)
+        if not refresh and definition.name in self._edge_freqs:
+            return self._edge_freqs[definition.name]
+
+        progress = _Progress(definition.resamples,
+                             f"arc stability [{definition.name}]", enabled=self.verbose)
+        kwargs = self._learn_kwargs(definition)
+        try:
+            result, failed = bootstrap_edge_frequencies(
+                self.df, resamples=definition.resamples,
+                seed=self.project.settings.learning.seed,
+                progress=progress.tick, **kwargs)
+        finally:
+            progress.finish()
+        if failed:
+            self._note(f"{failed} of {definition.resamples} bootstrap fits failed "
+                       f"for network {definition.name!r}. Frequencies are divided by "
+                       "the number of resamples requested, so failures lower them. "
+                       "Many failures mean the data are too thin for these settings.")
+        self._edge_freqs[definition.name] = result
+        return result
+
+    def arc_strengths(self, name: str | None = None) -> dict[tuple[str, str], float]:
+        """Mutual information (bits) between parent and child, for each learned arc."""
+        import pyagrum as gum
+
+        definition = self._network_def(name)
+        if definition.name not in self._strengths:
+            bn = self.network(definition.name)
+            strengths: dict[tuple[str, str], float] = {}
+            for parent, child in bn.arcs():
+                p_name, c_name = bn.variable(parent).name(), bn.variable(child).name()
+                try:
+                    # A new engine per arc: InformationTheory restricts the
+                    # engine it is given to that query's variables.
+                    info = gum.InformationTheory(gum.LazyPropagation(bn), c_name, [p_name])
+                    strengths[(p_name, c_name)] = max(info.mutualInformationXY(), 0.0)
+                except Exception:
+                    strengths[(p_name, c_name)] = float("nan")
+            self._strengths[definition.name] = strengths
+        return self._strengths[definition.name]
+
+    def stable_edges(self, name: str | None = None, *,
+                     min_frequency: float = 0.0) -> pd.DataFrame:
+        """Arc stability as a table, most frequent first.
+
+        `In network` says whether the arc is in the network learned from the
+        full data. That is a different question from how often the arc
+        survives resampling, and the two can disagree in both directions.
+        """
+        definition = self._network_def(name)
+        frequencies = self.edge_frequencies(definition.name)
+        in_network = set(self.arcs(definition.name))
+        strengths = self.arc_strengths(definition.name)
+        d = self.design
+
+        rows = [{
+            "Parent": d.label(p), "Child": d.label(c),
+            "Parent layer": d.variable(p).layer, "Child layer": d.variable(c).layer,
+            "Frequency": f, "In network": (p, c) in in_network,
+            "Mutual information (bits)": strengths.get((p, c), np.nan),
+        } for (p, c), f in frequencies.items() if f >= min_frequency]
+        columns = ["Parent", "Child", "Parent layer", "Child layer", "Frequency",
+                   "In network", "Mutual information (bits)"]
+        table = pd.DataFrame(rows, columns=columns)
+        return table.sort_values("Frequency", ascending=False).reset_index(drop=True)
+
+    def compare_networks(self, names: Sequence[str] | None = None) -> pd.DataFrame:
+        """Arc frequency in each network, side by side.
+
+        Use this to see what changes when a layer or variable is left out.
+        An empty cell means the arc did not occur in any resample of that
+        network, or the arc is not possible there.
+        """
+        names = list(names) if names else self.project.network_names
+        columns: dict[str, dict[tuple[str, str], float]] = {
+            n: self.edge_frequencies(n) for n in names}
+        arcs = sorted({arc for freq in columns.values() for arc in freq},
+                      key=lambda a: -max(f.get(a, 0.0) for f in columns.values()))
+        d = self.design
+        rows = [{"Parent": d.label(p), "Child": d.label(c),
+                 **{n: columns[n].get(a, np.nan) for n in names}}
+                for a in arcs for p, c in [a]]
+        return pd.DataFrame(rows, columns=["Parent", "Child", *names])
+
+    # -- interpretation ----------------------------------------------------
+
+    def _targets(self, network: Network, requested: Sequence[str],
+                 what: str) -> list[str]:
+        """Targets in `network`: those requested, else the default."""
+        chosen = list(requested) or list(self.project.default_targets(network))
+        present = [t for t in chosen if t in network.columns]
+        for t in chosen:
+            if t not in network.columns:
+                self._note(f"{what}: {self.label(t)} is not in network "
+                           f"{network.name!r} and was skipped.")
+        return present
+
+    def importance(self, name: str | None = None, *,
+                   targets: Sequence[str] | None = None) -> pd.DataFrame:
+        """Rank the other variables by mutual information with each target.
+
+        `Mutual information` (bits) is what a variable tells you about the
+        target. It includes information that reaches the target through
+        other variables, so a variable can rank high without being connected
+        to the target directly. `Relation` says how the variable is connected
+        to the target in the learned network: `parent`, `child`,
+        `co-parent` (shares a child with the target) or `other`. `Arcs` is the
+        shortest number of arcs between the two, ignoring direction. Neither
+        number is an effect estimate.
+        """
+        definition = self._network_def(name)
+        bn = self.network(definition.name)
+        requested = ([self.design.resolve_variable(t) for t in targets]
+                     if targets is not None else list(self.project.importance_targets))
+        chosen = self._targets(definition, requested, "importance")
+
+        frames = []
+        for target in chosen:
+            mi = mutual_information_scores(bn, target)
+            relations = relations_to_target(bn, target)
+            frame = pd.DataFrame({"Mutual information (bits)": mi})
+            frame.insert(0, "Target", self.label(target))
+            frame.insert(1, "Variable", [self.label(c) for c in frame.index])
+            frame.insert(2, "Layer", [self.design.variable(c).layer for c in frame.index])
+            frame["Relation"] = [relations[c][0] for c in frame.index]
+            frame["Arcs"] = [relations[c][1] for c in frame.index]
+            frames.append(frame.reset_index(drop=True))
+        columns = ["Target", "Variable", "Layer", "Mutual information (bits)",
+                   "Relation", "Arcs"]
+        if not frames:
+            return pd.DataFrame(columns=columns)
+        table = pd.concat(frames, ignore_index=True)
+        table["Arcs"] = table["Arcs"].astype("Int64")
+        return table.sort_values(["Target", "Mutual information (bits)"],
+                                 ascending=[True, False], kind="stable"
+                                 ).reset_index(drop=True)
+
+    # -- profiles and sweeps ---------------------------------------------------
+
+    def resolve_profile(self, network_name: str, profile: Mapping[str, Any], *,
+                        label: str = "profile") -> dict[str, int]:
+        """Convert the values of a profile to state indices.
+
+        `AGE: 72` is placed in the bin that contains 72, a category is matched
+        by name, and `"≥ 27"` as printed in the bins table also works. Values
+        that cannot be placed are reported and left out.
+        """
+        network = self._network_def(network_name)
+        template = self.template(network.name)
+        applied: dict[str, int] = {}
+        snapped: list[str] = []
+        rejected: list[str] = []
+
+        for column, value in profile.items():
+            name = self.label(column)
+            if column not in network.columns:
+                rejected.append(f"{name}={value!r} (not in network {network.name!r})")
+                continue
+            labels = list(template.variable(template.idFromName(column)).labels())
+            state = state_for_value(labels, value)
+            if state is None:
+                shown = list(pretty_labels(labels).values())
+                rejected.append(f"{name}={value!r} (no such state; states are {shown})")
+                continue
+            applied[column] = labels.index(state)
+            shown = pretty_labels(labels)[state]
+            if str(value) != shown:
+                snapped.append(f"{name}: {value!r} -> {shown}")
+        if snapped:
+            self._note(f"{label}: placed in bins: " + "; ".join(snapped))
+        if rejected:
+            self._note(f"{label}: NOT USED: " + "; ".join(rejected))
+        return applied
+
+    def profiles(self, name: str | None = None) -> pd.DataFrame:
+        """Probability of each state of the targets, given each profile.
+
+        One row per profile, target and state, with the mean over the
+        bootstrap resamples and a 95% percentile interval. The interval
+        reflects uncertainty in both the structure and the parameters,
+        because each resample learns both again.
+        """
+        project = self.project
+        if not project.profile_groups:
+            raise ValueError("No profiles are defined. Add `analyses: profiles: groups:` "
+                             "to settings.yml.")
+        definition = self._network_def(name or project.profile_network)
+        targets = self._targets(definition, list(project.profile_targets), "profiles")
+        if not targets:
+            raise ValueError("None of the profile targets is in this network.")
+
+        resolved = [(label, self.resolve_profile(definition.name, evidence, label=label))
+                    for label, evidence in project.profile_groups]
+        empty = [label for label, applied in resolved if not applied]
+        if empty:
+            raise ValueError(f"No value of the profile(s) {empty} could be used. "
+                             "Check names and values against study.bins().")
+
+        n = project.settings.profiles.resamples or definition.resamples
+        progress = _Progress(n, f"profiles [{definition.name}]", enabled=self.verbose)
+        try:
+            table, failed = bootstrap_profile_risks(
+                self.df, resamples=n, seed=project.settings.learning.seed,
+                progress=progress.tick, profiles=resolved, targets=targets,
+                **self._learn_kwargs(definition))
+        finally:
+            progress.finish()
+        if failed:
+            self._note(f"{failed} of {n} fits failed in the profile analysis.")
+
+        out = table.copy()
+        out["state"] = [self._states(definition.name, t)[s]
+                        for t, s in zip(table["target"], table["state"], strict=True)]
+        out["target"] = [self.label(t) for t in table["target"]]
+        out = out.rename(columns={
+            "profile": "Profile", "target": "Target", "state": "State",
+            "probability": "Probability", "std": "SD", "ci_low": "CI 2.5%",
+            "ci_high": "CI 97.5%", "resamples": "Resamples"})
+        return out.sort_values(["Profile", "Target", "State"]).reset_index(drop=True)
+
+    def sweep(self, name: str | None = None) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Move one variable across its states with a profile held fixed.
+
+        Returns `(table, meta)`. `meta` carries what the figure needs. A note
+        is made if the fixed profile contains a variable downstream of the
+        moved one: holding it fixed blocks part of the effect being measured.
+        These are conditional probabilities, not effects of an intervention.
+        """
+        project = self.project
+        if not project.sweep_variable:
+            raise ValueError("No sweep is defined. Add `analyses: sweep:` to settings.yml.")
+        definition = self._network_def(name or project.sweep_network)
+        column = project.sweep_variable
+        if column not in definition.columns:
+            raise ValueError(f"{self.label(column)} is not in network {definition.name!r}.")
+        targets = self._targets(definition, list(project.sweep_targets), "sweep")
+
+        template = self.template(definition.name)
+        states = list(template.variable(template.idFromName(column)).labels())
+        fixed = self.resolve_profile(definition.name, project.sweep_fixed, label="sweep")
+
+        bn = self.network(definition.name)
+        below = {bn.variable(i).name() for i in descendants(bn, bn.idFromName(column))}
+        blocked = [self.label(c) for c in fixed if c in below]
+        if blocked:
+            self._note(f"sweep: {blocked} lie downstream of {self.label(column)} in the "
+                       "learned network. Holding them fixed blocks part of the effect of "
+                       f"{self.label(column)}, and the curves can look flat for that "
+                       "reason. Fix only variables upstream of it.")
+
+        n = project.settings.sweep.resamples or definition.resamples
+        progress = _Progress(n, f"sweep [{self.label(column)}]", enabled=self.verbose)
+        try:
+            table, target_states, failed = bootstrap_sweep(
+                self.df, resamples=n, seed=project.settings.learning.seed,
+                progress=progress.tick, variable=column, variable_states=states,
+                fixed=fixed, targets=targets, **self._learn_kwargs(definition))
+        finally:
+            progress.finish()
+        if failed:
+            self._note(f"{failed} of {n} fits failed in the sweep.")
+
+        shown = pretty_labels(states)
+        out = table.copy()
+        out["variable_state"] = out["variable_state"].map(shown)
+        out["target_state"] = [self._states(definition.name, t)[s] for t, s in
+                               zip(table["target"], table["target_state"], strict=True)]
+        out["target"] = [self.label(t) for t in table["target"]]
+        meta = {
+            "variable": self.label(column),
+            "variable_states": [shown[s] for s in states],
+            "targets": [self.label(t) for t in targets],
+            "target_states": {self.label(t): [self._states(definition.name, t)[s]
+                                              for s in target_states[t]]
+                              for t in targets},
+            "fixed": {self.label(c): project.sweep_fixed.get(c, v)
+                      for c, v in fixed.items()},
+        }
+        return out, meta
+
+    # -- reporting -------------------------------------------------------------
+
+    def summary(self) -> str:
+        """Text description of the project and the data."""
+        lines = [self.project.summary(), "",
+                 f"Data         {self.n} participants, {len(self.df.columns)} variables used"]
+        if self.n != self.n_input:
+            lines[-1] += f" ({self.n_input - self.n} removed for missing values)"
+        return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        return (f"<Analysis {self.project.name!r}: {self.n} participants, "
+                f"networks {self.project.network_names}>")

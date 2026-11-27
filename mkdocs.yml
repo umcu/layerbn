@@ -1,0 +1,154 @@
+site_name: layerbn
+site_description: Layered Bayesian networks for cohort studies. You set the order of the variables, the data decide the arcs.
+site_url: https://umcu.github.io/layerbn/
+repo_url: https://github.com/umcu/layerbn
+repo_name: umcu/layerbn
+edit_uri: edit/main/docs/
+copyright: MIT licence · UMC Utrecht
+
+docs_dir: docs
+exclude_docs: |
+  overrides/
+  assets/build_logo.py
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: assets/mark.svg
+  favicon: assets/mark.png
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.instant
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - content.action.edit
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/layerbn.css
+
+hooks:
+  - docs/overrides/hooks.py
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: false
+            filters: ["!^_"]
+            heading_level: 2
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Start here:
+      - start/index.md
+      - Install: start/install.md
+      - Your first run: start/first-run.md
+  - Your own study:
+      - guide/index.md
+      - 1 · Prepare the data: guide/data.md
+      - 2 · Order the variables: guide/layers.md
+      - 3 · Fill in variables.xlsx: guide/workbook.md
+      - 4 · Choose the settings: guide/settings.md
+      - 5 · Check and run: guide/check-run.md
+      - 6 · Report: guide/reporting.md
+      - Going further:
+          - Several networks: guide/networks.md
+          - Rules for arcs: guide/rules.md
+          - Profiles and sweeps: guide/profiles-sweeps.md
+          - Measurements over time: guide/repeated.md
+          - The interactive explorer: guide/explorer.md
+          - From Python: guide/python.md
+  - Reading the results:
+      - results/index.md
+      - The network figure: results/network-figure.md
+      - Arc stability: results/stability.md
+      - Information about a target: results/information.md
+      - Profiles and sweeps: results/profiles-sweeps.md
+      - Bins and sample size: results/bins.md
+      - Comparing networks: results/comparing.md
+  - Reference:
+      - reference/index.md
+      - variables.xlsx: reference/variables.md
+      - settings.yml: reference/settings.md
+      - Commands: reference/cli.md
+      - The results folder: reference/results-folder.md
+      - Python API: reference/api.md
+  - Help:
+      - help/index.md
+      - Error messages: help/troubleshooting.md
+  - About:
+      - about/index.md
+      - How it works: about/how-it-works.md
+      - Citing layerbn: about/citing.md
+      - Upgrading from version 2: about/upgrading.md
+      - Changelog: about/changelog.md

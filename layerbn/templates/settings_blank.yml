@@ -1,0 +1,73 @@
+# ════════════════════════════════════════════════════════════════════════
+#  layerbn settings
+# ════════════════════════════════════════════════════════════════════════
+#
+# This file says HOW the analysis is done. The variables and their layers
+# are in variables.xlsx.
+#
+# To get started you need to do two things:
+#   1. Fill in variables.xlsx (see its 'instructions' sheet).
+#   2. Set `data: file:` below to your data file.
+#
+# Then:
+#     layerbn check settings.yml        checks everything without running it
+#     layerbn run settings.yml --fast   a quick trial run
+#     layerbn run settings.yml          the run to report
+#
+# Lines that start with # are comments. The worked example created by
+# `layerbn init` (without --blank) has every setting explained in detail.
+
+settings_version: 3
+
+name: My study
+description: >
+  One or two sentences on the study: population, follow-up, measures.
+  This appears in the report.
+
+output_dir: results
+
+data:
+  file: data/my_data.csv        # relative to this file, or a full path
+  missing: error                # error, or drop_rows to use complete cases only
+  column_pattern: "{variable}_{time}"   # only used for repeated measures
+
+discretisation:
+  method: quantile              # quantile or uniform
+  bins: 4
+  categorical_max_levels: 10    # at most this many distinct values: not binned
+
+learning:
+  score: K2                     # K2, BIC or BDeu
+  search: tabu                  # tabu or greedy
+  max_parents: 5
+  seed: 42
+
+bootstrap:
+  resamples: 100                # 20 for a trial, 200 or more for the results you report
+
+# Optional: rule out or require specific arcs. See the example project.
+# constraints:
+#   forbid:
+#     - {from: VARIABLE_A, to: VARIABLE_B}
+#   require:
+#     - {from: VARIABLE_C, to: VARIABLE_D}
+
+# Optional: more than one network, for example without a layer.
+# Without this block one network with all variables is learned.
+# networks:
+#   - name: all_variables
+#   - name: without_layer_x
+#     exclude_layers: [Layer X]
+
+# Optional follow-up analyses. Targets default to the variables marked
+# `target` in variables.xlsx, or else the variables of the last layer.
+# analyses:
+#   importance:
+#     targets: [OUTCOME]
+#   profiles:
+#     groups:
+#       "Group 1": {AGE: 65, SEX: Female}
+#       "Group 2": {AGE: 80, SEX: Female}
+#   sweep:
+#     variable: SOME_MEASURE
+#     fixed: {AGE: 72}
