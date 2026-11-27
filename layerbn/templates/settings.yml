@@ -1,0 +1,163 @@
+# ════════════════════════════════════════════════════════════════════════
+#  layerbn settings
+# ════════════════════════════════════════════════════════════════════════
+#
+# This file says HOW the analysis is done. The variables and their layers
+# are in variables.xlsx.
+#
+# Most settings can stay as they are. To use your own data you normally
+# change two things: `data: file:` below, and the contents of variables.xlsx.
+#
+# Check your settings and your workbook without running the analysis:
+#
+#     layerbn check settings.yml
+#
+# Then run everything:
+#
+#     layerbn run settings.yml
+#
+# Lines that start with # are comments and are ignored.
+
+settings_version: 3
+
+name: Example study
+description: >
+  Simulated example: characteristics measured at baseline and an outcome at
+  follow-up. Replace this text with one or two sentences on your study: the
+  population, the follow-up, the measures. It appears in the report.
+
+# Where the results are written (figures, tables, report), relative to this
+# file.
+output_dir: results
+
+
+# ── Data ────────────────────────────────────────────────────────────────
+# One row per participant, one column per variable. Excel, CSV, Parquet, SPSS
+# and Stata files are read by their extension.
+data:
+  # A path relative to this file, or a full path. You can also give the file
+  # when you run:  layerbn run settings.yml --data /path/to/file.csv
+  file: data/demo_cohort.csv
+
+  # What to do with participants who have a missing value in any variable of
+  # the design table.
+  #   error      stop and list the variables with missing values (default).
+  #   drop_rows  analyse only participants with complete data. This can bias
+  #              the results if values are not missing at random.
+  missing: error
+
+  # Only for variables measured more than once (a layer marked as repeated;
+  # the example has none). With the time points T0 and T1, the variable SCORE
+  # is then looked up as the columns SCORE_T0 and SCORE_T1.
+  column_pattern: "{variable}_{time}"
+
+
+# ── Binning of continuous variables ─────────────────────────────────────
+# The network works on discrete variables, so continuous variables are cut
+# into bins. All results depend on the bins. The report lists them.
+# A single variable can have its own number of bins or its own cut points
+# in variables.xlsx.
+discretisation:
+  method: quantile          # quantile: equal numbers of participants per bin
+                            # uniform:  equal-width bins
+  bins: 4
+  # A variable with this many different values or fewer is not binned.
+  categorical_max_levels: 10
+
+
+# ── Learning the network ────────────────────────────────────────────────
+learning:
+  score: K2                 # K2, BIC or BDeu. BIC gives sparser networks.
+  search: tabu              # tabu searches more thoroughly than greedy
+  max_parents: 5            # at most this many parents per variable
+  seed: 42                  # report this number with your results
+
+
+# ── Arc stability ───────────────────────────────────────────────────────
+# The structure is learned again on this many resamples of the participants.
+# The fraction of resamples that contain an arc is its stability. This is
+# the slowest step; use 20 while you are setting up and 200 or more for the
+# results you report.
+bootstrap:
+  resamples: 100
+
+
+# ── Extra rules for arcs ────────────────────────────────────────────────
+# The order of the layers in variables.xlsx already rules out every arc that
+# runs backwards. Rules here can only rule out more. They can not allow an
+# arc that runs against the layer order. Every rule is optional.
+#
+# A variable or a layer can be written by its column name or its label. A
+# layer name stands for all variables in it (and, for a repeated layer, at
+# all time points).
+#
+# constraints:
+#   within_layers: true            # allow arcs between variables of one layer;
+#                                  # can be set per layer in variables.xlsx
+#   forbid:                        # arcs that must not occur
+#     - {from: SEX, to: EXPOSURE_B}
+#     - {from_layer: Exposures, to_layer: Outcome}
+#   require:                       # arcs that must occur. Use sparingly: a
+#                                  # required arc is an assumption, not a result.
+#     - {from: AGE, to: EXPOSURE_A}
+#   no_parents: [AGE, SEX]         # nothing in the network may cause these
+#   no_children: [OUTCOME]         # these may not cause anything
+
+
+# ── Networks to learn ───────────────────────────────────────────────────
+# Each entry is one network, learned and bootstrapped separately. Use more
+# than one to see what changes when a layer or a variable is left out.
+# Without this block, one network with all variables is learned.
+networks:
+  - name: all_variables
+    description: All variables in the design table.
+
+  - name: without_exposures
+    description: The same, without the exposure layer.
+    exclude_layers: [Exposures]
+    resamples: 50           # optional: a different number of resamples
+  # - name: without_measure_3
+  #   exclude_variables: [MEASURE_3]
+
+
+# ── Follow-up analyses ──────────────────────────────────────────────────
+# All optional. Delete a block to skip it.
+#
+# "Targets" are the variables you are mainly interested in. If you do not
+# list any here, the variables marked `target` in variables.xlsx are used,
+# or else the variables of the last layer.
+analyses:
+
+  # Which variables tell most about each target: mutual information with
+  # the target, and how each variable is connected to it in the network.
+  # Runs on every network. Fast.
+  importance:
+    targets: [OUTCOME]
+
+  # Probability of the targets for groups you define, for example a younger
+  # and an older group. Values are placed in the bin they belong to, or
+  # matched to a category by name.
+  profiles:
+    network: all_variables
+    targets: [OUTCOME]
+    groups:
+      "Younger, low exposure":
+        AGE: 50
+        EXPOSURE_A: 30
+        EXPOSURE_B: "No"
+      "Older, high exposure":
+        AGE: 70
+        EXPOSURE_A: 60
+        EXPOSURE_B: "Yes"
+
+  # Move one variable across all its states while the rest of the profile
+  # stays fixed. Fix only variables that come BEFORE the moved variable in
+  # the layer order. Fixing a variable between the moved variable and the
+  # target hides the effect.
+  sweep:
+    network: all_variables
+    variable: EXPOSURE_A
+    fixed:
+      AGE: 60
+      SEX: Female
+    targets: [OUTCOME]

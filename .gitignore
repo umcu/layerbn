@@ -51,11 +51,10 @@ datasets/
 # Keep folder scaffolding discoverable
 !**/.gitkeep
 
-# Keep the repo logo (referenced in README). *.png above is a blanket
-# ignore, so a logo file would otherwise be invisible to git. Matched by
-# prefix rather than by exact name, so replacing the logo does not need an
-# edit here — call the file logo-something.png and it will be tracked.
-!logo-*.png
+# Keep the logo and the example figures used by the README and the docs.
+# The blanket *.png and *.svg rules above would otherwise hide them.
+!docs/assets/*.png
+!docs/assets/*.svg
 
 # --- Python cache / bytecode ---
 __pycache__/
@@ -156,3 +155,6 @@ config/data_paths.yml
 MIGRATION.md
 PORT_DIFF.md
 SPEC_PLAN.md
+
+# --- Docs: the live example is generated at build time (docs/overrides/hooks.py) ---
+docs/generated/

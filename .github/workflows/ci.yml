@@ -61,16 +61,21 @@ jobs:
           python -m twine check dist/*
 
       - name: Install the wheel and run the CLI from it
-        # `layerbn init` copies templates out of the installed package, so a
-        # wheel that omits them passes every other check and still fails for
-        # the first person who installs it.
+        # `layerbn init` and `layerbn run` use files and libraries that are
+        # only present if the wheel is complete. A wheel that omits the
+        # templates passes every other check and fails for the first person
+        # who installs it.
         run: |
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install dist/*.whl
-          /tmp/venv/bin/python -m layerbn init /tmp/study
-          /tmp/venv/bin/python -m layerbn check /tmp/study/spec.yml
-          test -f /tmp/study/analysis.ipynb
-          test -f /tmp/study/config.yml
+          /tmp/venv/bin/layerbn init /tmp/study
+          /tmp/venv/bin/layerbn init /tmp/blank --blank
+          /tmp/venv/bin/layerbn check /tmp/study
+          test -f /tmp/study/settings.yml
+          test -f /tmp/study/variables.xlsx
+          test -f /tmp/study/data/demo_cohort.csv
+          /tmp/venv/bin/layerbn run /tmp/study --fast --fast-resamples 3
+          test -f /tmp/study/results/report.html
 
       - uses: actions/upload-artifact@v4
         with:

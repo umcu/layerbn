@@ -1,38 +1,30 @@
-"""layerbn — layered Bayesian networks for cohort studies.
+"""layerbn: layered Bayesian networks for cohort studies.
 
-The analysis is declared in a YAML spec, not in code. To start a project:
+Variables are arranged in ordered layers, and the network may only have arcs
+from a layer to itself or to a later layer. The analysis is described in two
+files, not in code: `variables.xlsx` (variables, layers, time points) and
+`settings.yml` (binning, learning, bootstrap, arc rules, follow-up analyses).
 
-    python -m layerbn init my-study   # writes spec.yml, config.yml, notebook
-    python -m layerbn check spec.yml  # validates a spec, runs nothing
+From the command line:
 
-Most users need only `Analysis`, which reads every setting from the spec:
+    layerbn init my-study       # a new project with a worked example
+    layerbn check my-study      # check the files and the data
+    layerbn run my-study        # run everything, write results/report.html
+
+From Python:
 
     from layerbn.analysis import Analysis
-    study = Analysis.from_files("spec.yml", "cohort.parquet")
-    study.network("joint")
-    study.stable_edges("joint")
+    study = Analysis.from_files("settings.yml")
+    study.stable_edges()
 
-The individual functions are available for scripting. They take the layer
-map, the score, the seed and the layer role patterns as separate arguments,
-so a caller using them directly is responsible for keeping those consistent
-with the spec:
+The modules are `design` (the variables table), `settings`, `project` (both
+checked against each other), `analysis`, `figures`, `runner` and `report`.
+`bn_utils` and `inference` hold the learning and inference functions and know
+nothing about what a variable means.
 
-    from layerbn.spec import load_spec, check_against_dataframe
-    from layerbn.config import load_project_config, PreprocessConfig
-    from layerbn.preprocess import impute_dataframe, coalesce
-    from layerbn.discretisation import make_type_processor, state_for_value
-    from layerbn.bn_utils import build_bn, bootstrap_edge_frequencies, bootstrap_knob_sweep
-    from layerbn.inference import mutual_information_scores, conditional_mutual_information_scores
-    from layerbn.plotting import default_layer_colors, build_node_colors, plot_knob_sweep
-
-Nothing here has import-time side effects, and pyAgrum is imported inside
-functions rather than at module level. The package deliberately provides no
-`from module import *` re-exports, so that stack traces and go-to-definition
-show the fully qualified path.
-
-Scope: this package starts at an analysis-ready dataframe. Cohort-specific
-preprocessing, including outcome derivation, censoring and imputation, lives
-in the analysis repository.
+The package starts at an analysis-ready table. Deriving variables, applying
+censoring rules and imputing missing values are decisions about a specific
+cohort and are done before this package is used.
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"

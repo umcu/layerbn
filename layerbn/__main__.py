@@ -1,17 +1,13 @@
-"""Command line entry point.
+"""Command line.
 
-Two commands, both aimed at the point before any Python has been written:
+    layerbn init my-study           # a new project with a worked example
+    layerbn init my-study --blank   # a new project with empty tables
+    layerbn check my-study          # check settings, design table and data
+    layerbn run my-study            # run everything, write the results folder
+    layerbn migrate old/spec.yml    # convert a version 2 spec
 
-    python -m layerbn init my-study   # create a project folder
-    python -m layerbn check spec.yml  # validate a spec, without a kernel
-
-`check` is worth running whenever the spec changes. Validation is the same
-code the notebook runs, so a spec that passes here will load there, and a
-typo is reported in a second rather than after a bootstrap has been running
-for half an hour.
-
-Both are also available as `python -m layerbn ...`, which works even when
-the install directory is not on PATH.
+`my-study` is the folder, or the settings file in it. `python -m layerbn`
+does the same as `layerbn` and works when the install folder is not on PATH.
 """
 from __future__ import annotations
 
@@ -22,117 +18,218 @@ from pathlib import Path
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
-
-_GITIGNORE = """# Keep config.yml and results out of version control. spec.yml is meant
-# to be committed and published; config.yml holds machine paths.
-config.yml
-outputs/
+_GITIGNORE = """# The data and the results do not belong in version control.
+# settings.yml and variables.xlsx do: they describe the analysis.
+data/
+results/
 .ipynb_checkpoints/
 """
 
 
-def _init(destination: Path, force: bool) -> int:
-    """Copy the templates into a new project folder."""
-    files = ["spec.yml", "config.yml", "analysis.ipynb"]
-    destination.mkdir(parents=True, exist_ok=True)
+def _settings_file(path: Path | None) -> Path:
+    """A settings file, given as the file itself or as the folder that holds it."""
+    path = Path(path) if path is not None else Path("settings.yml")
+    if path.is_dir():
+        path = path / "settings.yml"
+    return path
 
-    existing = [f for f in files if (destination / f).exists()]
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
+
+def _init(folder: Path, *, blank: bool, notebook: bool, force: bool) -> int:
+    from layerbn.demo import make_demo_cohort
+    from layerbn.workbook import write_design_workbook
+
+    targets = ["settings.yml", "variables.xlsx"] + (["analysis.ipynb"] if notebook else [])
+    existing = [t for t in targets if (folder / t).exists()]
     if existing and not force:
-        print(f"error: {destination} already contains {existing}.\n"
-              "Pass --force to overwrite, or choose a different folder.",
-              file=sys.stderr)
+        print(f"Error: {folder} already contains {existing}. "
+              "Use --force to overwrite, or choose another folder.", file=sys.stderr)
         return 1
+    folder.mkdir(parents=True, exist_ok=True)
 
-    for name in files:
-        shutil.copyfile(TEMPLATE_DIR / name, destination / name)
-        print(f"  created {destination / name}")
+    template = "settings_blank.yml" if blank else "settings.yml"
+    shutil.copyfile(TEMPLATE_DIR / template, folder / "settings.yml")
+    write_design_workbook(folder / "variables.xlsx", demo=not blank)
+    created = ["settings.yml", "variables.xlsx"]
 
-    gitignore = destination / ".gitignore"
-    if force or not gitignore.exists():
-        gitignore.write_text(_GITIGNORE, encoding="utf-8")
-        print(f"  created {gitignore}")
+    if not blank:
+        (folder / "data").mkdir(exist_ok=True)
+        make_demo_cohort(n=800, seed=0).to_csv(folder / "data" / "demo_cohort.csv",
+                                               index=False)
+        created.append("data/demo_cohort.csv")
+    if notebook:
+        shutil.copyfile(TEMPLATE_DIR / "analysis.ipynb", folder / "analysis.ipynb")
+        created.append("analysis.ipynb")
+    if not (folder / ".gitignore").exists():
+        (folder / ".gitignore").write_text(_GITIGNORE, encoding="utf-8")
 
-    print(
-        f"\nNext:\n"
-        f"    cd {destination}\n"
-        f"    jupyter lab analysis.ipynb\n"
-        f"\nThen run every cell. It takes about a minute on the built-in\n"
-        f"simulated cohort, so you see the whole analysis before changing\n"
-        f"anything. The notebook tells you what to edit after that."
-    )
+    print(f"Created in {folder}:")
+    for name in created:
+        print(f"  {name}")
+    if blank:
+        print(
+            "\nNext:\n"
+            "  1. Open variables.xlsx and list your variables and layers.\n"
+            "     The 'instructions' sheet explains each column.\n"
+            "  2. Open settings.yml and set `data: file:` to your data file.\n"
+            f"  3. layerbn check {folder}\n"
+            f"  4. layerbn run {folder} --fast        (a quick trial run)\n"
+            f"  5. layerbn run {folder}               (the run to report)")
+    else:
+        print(
+            "\nThe project contains a simulated example. Try it:\n"
+            f"  layerbn run {folder} --fast\n"
+            "then open results/report.html. To use your own data, edit variables.xlsx\n"
+            "(delete the example rows first) and `data: file:` in settings.yml, or start\n"
+            f"from an empty project with `layerbn init {folder} --blank`.")
     return 0
 
 
-def _check(path: Path) -> int:
-    """Validate a spec and describe what it declares."""
-    from layerbn.spec import SpecError, load_spec
+# ---------------------------------------------------------------------------
+# check
+# ---------------------------------------------------------------------------
+
+def _check(settings: Path, data: Path | None, figure: bool) -> int:
+    from layerbn.analysis import Analysis, DataError, read_table
+    from layerbn.project import ProjectError, load_project
+
+    project = load_project(settings)
+    print(project.summary())
+    print("\nSettings and design table are valid.")
 
     try:
-        spec = load_spec(path)
-    except SpecError as exc:
-        print(f"INVALID: {exc}", file=sys.stderr)
-        return 1
+        data_path = project.data_path(data)
+    except ProjectError as exc:
+        print(f"\nData not checked: {exc}")
+        data_path = None
 
-    print(f"{path} is valid.\n")
-    print(f"  name        {spec.name}")
-    print(f"  data        {spec.data_path}")
-    print(f"  variables   {len(spec.variables)}")
-    print(f"  layers      {len(spec.layers)}, in this order:")
-    for i, layer in enumerate(spec.layers):
-        role = "" if layer.role == "covariate" else f"  [{layer.role}]"
-        print(f"                {i}. {layer.name}{role}")
-        print(f"                   {', '.join(layer.variables)}")
-    print(f"  variants    {[v.name for v in spec.variants]}")
-    print(f"  bootstrap   {spec.bootstrap_n} resamples")
+    status = 0
+    if data_path is not None:
+        if not data_path.exists():
+            print(f"\nData not checked: {data_path} does not exist.")
+        else:
+            try:
+                study = Analysis(project, read_table(data_path), verbose=False)
+            except DataError as exc:
+                print(f"\nProblem with the data:\n{exc}")
+                status = 1
+            else:
+                print(f"\nData file {data_path.name}: {study.n} participants, all "
+                      f"{len(project.design.variables)} variables found.")
+                for note in study.notes:
+                    print(f"  note: {note}")
 
-    constraints = spec.constraints
-    print("  arcs        only downstream through the layer order above")
-    print(f"                within a layer: "
-          f"{'allowed' if constraints.within_layers else 'forbidden'}")
-    print(f"                between outcomes: "
-          f"{'allowed' if constraints.arcs_between_outcomes else 'forbidden'}")
-    if spec.layers_with_role("selection"):
-        print(f"                into the selection layer: from "
-              f"{constraints.selection_parents}")
-    for label, pairs in (("forbidden", spec.forbidden_pairs),
-                         ("required", spec.mandatory_pairs)):
-        if pairs:
-            print(f"                {label} ({len(pairs)}):")
-            for parent, child in sorted(pairs):
-                print(f"                  {parent} -> {child}")
-    if constraints.no_parents:
-        print(f"                no parents: {list(constraints.no_parents)}")
-    if constraints.no_children:
-        print(f"                no children: {list(constraints.no_children)}")
+    if figure:
+        from layerbn import figures
+        out = project.output_path() / "figures"
+        written = figures.save_figure(figures.design_figure(project), out / "design",
+                                      formats=("png",))
+        print(f"\nDrew the layers: {written[0]}")
+    else:
+        print("\nAdd --figure to draw the layers and check the order.")
+    return status
 
-    print("\nArcs may only run from a layer to itself or to one below it in "
-          "that list.\nIf the order above is not the order you would defend, "
-          "reorder `layers` in the spec.")
+
+# ---------------------------------------------------------------------------
+# run / migrate
+# ---------------------------------------------------------------------------
+
+def _run(args: argparse.Namespace) -> int:
+    from layerbn.runner import run_project
+
+    run_project(
+        _settings_file(args.settings), data=args.data, output=args.output,
+        fast=args.fast, fast_resamples=args.fast_resamples,
+        networks=args.network or None,
+        formats=("png",) if args.no_pdf else ("png", "pdf"))
     return 0
+
+
+def _migrate(spec: Path, out: Path | None) -> int:
+    from layerbn.migrate import migrate
+
+    folder, notes = migrate(spec, out)
+    print(f"Wrote {folder / 'settings.yml'} and {folder / 'variables.xlsx'}, "
+          "and loaded them again without errors.")
+    for note in notes:
+        print(f"  note: {note}")
+    print("\nOpen variables.xlsx to check the layers, then run "
+          f"`layerbn check {folder}`.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="layerbn",
+        description="Layered Bayesian networks for cohort studies.")
+    parser.add_argument("--traceback", action="store_true",
+                        help="show the full Python error, for bug reports")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    init = commands.add_parser("init", help="create a project folder")
+    init.add_argument("folder", type=Path)
+    init.add_argument("--blank", action="store_true",
+                      help="empty tables instead of the worked example")
+    init.add_argument("--notebook", action="store_true",
+                      help="also write a short Jupyter notebook")
+    init.add_argument("--force", action="store_true", help="overwrite existing files")
+
+    check = commands.add_parser("check", help="check settings, design table and data")
+    check.add_argument("settings", nargs="?", type=Path,
+                       help="settings.yml, or the folder that holds it")
+    check.add_argument("--data", type=Path, help="data file, instead of data: file:")
+    check.add_argument("--figure", action="store_true",
+                       help="draw the layers and variables")
+
+    run = commands.add_parser("run", help="run the analysis and write the results")
+    run.add_argument("settings", nargs="?", type=Path,
+                     help="settings.yml, or the folder that holds it")
+    run.add_argument("--data", type=Path, help="data file, instead of data: file:")
+    run.add_argument("--output", type=Path, help="results folder, instead of output_dir:")
+    run.add_argument("--fast", action="store_true",
+                     help="few bootstrap resamples, for a quick trial run")
+    run.add_argument("--fast-resamples", type=int, default=20, metavar="N",
+                     help="resamples used with --fast (default 20)")
+    run.add_argument("--network", action="append", metavar="NAME",
+                     help="only this network (can be repeated)")
+    run.add_argument("--no-pdf", action="store_true", help="write PNG figures only")
+
+    migrate = commands.add_parser("migrate", help="convert a version 2 spec.yml")
+    migrate.add_argument("spec", type=Path)
+    migrate.add_argument("--out", type=Path, help="folder for the new files")
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="layerbn",
-        description="Layered Bayesian networks for cohort studies.",
-    )
-    subcommands = parser.add_subparsers(dest="command", required=True)
+    args = build_parser().parse_args(argv)
 
-    init = subcommands.add_parser(
-        "init", help="create a project folder with a spec and a notebook")
-    init.add_argument("destination", type=Path,
-                      help="folder to create the files in")
-    init.add_argument("--force", action="store_true",
-                      help="overwrite existing files")
+    from layerbn.analysis import DataError
+    from layerbn.design import DesignError
+    from layerbn.migrate import MigrationError
+    from layerbn.project import ProjectError
+    from layerbn.settings import SettingsError
 
-    check = subcommands.add_parser(
-        "check", help="validate a spec.yml and summarise what it declares")
-    check.add_argument("spec", type=Path, help="path to spec.yml")
-
-    args = parser.parse_args(argv)
-    if args.command == "init":
-        return _init(args.destination, args.force)
-    return _check(args.spec)
+    known = (SettingsError, DesignError, ProjectError, DataError, MigrationError,
+             FileNotFoundError)
+    try:
+        if args.command == "init":
+            return _init(args.folder, blank=args.blank, notebook=args.notebook,
+                         force=args.force)
+        if args.command == "check":
+            return _check(_settings_file(args.settings), args.data, args.figure)
+        if args.command == "run":
+            return _run(args)
+        return _migrate(args.spec, args.out)
+    except known as exc:
+        if args.traceback:
+            raise
+        print(f"\nError: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

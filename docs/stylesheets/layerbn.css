@@ -1,0 +1,251 @@
+/* layerbn documentation theme.
+   The colours are the layer colours of the figures and the logo, so the site,
+   the report and the figures read as one thing. */
+
+:root {
+  --lb-ink: #1f2328;
+  --lb-ink-2: #57606a;
+  --lb-line: #e6e8eb;
+  --lb-blue: #2a78d6;
+  --lb-orange: #eb6834;
+  --lb-green: #1baf7a;
+  --lb-amber: #eda100;
+  --lb-pink: #e87ba4;
+  --lb-surface: #f6f7f9;
+  --lb-card: #ffffff;
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1f2a37;
+  --md-primary-fg-color--light: #2d3b4d;
+  --md-primary-fg-color--dark: #141b24;
+  --md-primary-bg-color: #ffffff;
+  --md-accent-fg-color: #2a78d6;
+  --md-accent-fg-color--transparent: rgba(42, 120, 214, 0.1);
+  --md-typeset-a-color: #1f63b8;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 215;
+  --md-primary-fg-color: #161d26;
+  --md-primary-fg-color--light: #222c38;
+  --md-primary-fg-color--dark: #0f141a;
+  --md-accent-fg-color: #6aa6ef;
+  --md-accent-fg-color--transparent: rgba(106, 166, 239, 0.12);
+  --md-typeset-a-color: #7db2f2;
+  --md-default-bg-color: #12171e;
+  --lb-ink: #e6e9ed;
+  --lb-ink-2: #a3acb7;
+  --lb-line: #2a3340;
+  --lb-surface: #171d26;
+  --lb-card: #1a212b;
+}
+
+.md-typeset h1 { font-weight: 700; letter-spacing: -0.01em; }
+.md-typeset h2 { font-weight: 650; }
+
+/* A thin band of the layer colours under the header: the visual signature. */
+.md-header::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -3px;
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--lb-blue) 0 20%, var(--lb-orange) 20% 40%, var(--lb-green) 40% 60%,
+    var(--lb-amber) 60% 80%, var(--lb-pink) 80% 100%);
+}
+
+/* ------------------------------------------------------------------ home */
+
+.lb-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 2.4rem;
+  align-items: center;
+  margin: 0.6rem 0 2.6rem;
+}
+.lb-hero__logo { width: 15rem; max-width: 70%; margin-bottom: 1.2rem; }
+.md-typeset .lb-hero h1 {
+  font-size: 2.15rem;
+  line-height: 1.15;
+  margin: 0 0 0.8rem;
+  color: var(--lb-ink);
+}
+.lb-hero__lead { font-size: 0.95rem; color: var(--lb-ink-2); margin-bottom: 1.4rem; }
+.lb-hero__figure {
+  background: #fff;
+  border: 1px solid var(--lb-line);
+  border-radius: 12px;
+  padding: 0.6rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 32, 0.08);
+}
+.lb-hero__figure img { display: block; border-radius: 6px; }
+.lb-hero .md-button { margin: 0 0.5rem 0.6rem 0; }
+
+@media screen and (max-width: 60em) {
+  .lb-hero { grid-template-columns: minmax(0, 1fr); gap: 1.4rem; }
+}
+
+/* The layer chips: four coloured blocks that read as "ordered layers". */
+.lb-chips { display: flex; gap: 6px; margin-bottom: 1rem; }
+.lb-chips span { width: 34px; height: 8px; border-radius: 4px; }
+.lb-chips span:nth-child(1) { background: var(--lb-blue); }
+.lb-chips span:nth-child(2) { background: var(--lb-orange); }
+.lb-chips span:nth-child(3) { background: var(--lb-green); }
+.lb-chips span:nth-child(4) { background: var(--lb-amber); }
+
+.md-typeset .lb-section-title {
+  font-size: 1.35rem;
+  margin: 2.8rem 0 0.4rem;
+  border: 0;
+}
+.lb-section-sub { color: var(--lb-ink-2); margin-top: 0; }
+
+/* Numbered steps: order, learn, read. */
+.lb-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0;
+  counter-reset: lb-step;
+}
+@media screen and (max-width: 50em) {
+  .lb-steps { grid-template-columns: minmax(0, 1fr); }
+}
+.lb-step {
+  position: relative;
+  border: 1px solid var(--lb-line);
+  border-top: 4px solid var(--lb-step-colour, var(--lb-blue));
+  border-radius: 10px;
+  padding: 1rem 1.1rem 0.9rem;
+  background: var(--lb-card);
+}
+.lb-step:nth-child(1) { --lb-step-colour: var(--lb-blue); }
+.lb-step:nth-child(2) { --lb-step-colour: var(--lb-green); }
+.lb-step:nth-child(3) { --lb-step-colour: var(--lb-amber); }
+.md-typeset .lb-step h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+.md-typeset .lb-step h3::before {
+  counter-increment: lb-step;
+  content: counter(lb-step);
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem; height: 1.5rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: var(--lb-step-colour);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.md-typeset .lb-step p { margin: 0.3rem 0; font-size: 0.78rem; }
+.md-typeset .lb-step code { font-size: 0.74rem; }
+
+/* Figure gallery. */
+.md-typeset .grid.cards.lb-gallery > ul > li,
+.md-typeset .grid.cards.lb-gallery > ol > li { padding: 0.6rem; }
+.md-typeset .lb-gallery img {
+  display: block;
+  width: 100%;
+  height: 9.5rem;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid var(--lb-line);
+  margin-bottom: 0.5rem;
+}
+.md-typeset .lb-gallery p { margin: 0.25rem 0.2rem; font-size: 0.76rem; }
+
+/* "Try it" block. */
+.lb-try {
+  border-radius: 12px;
+  padding: 1.2rem 1.4rem 0.4rem;
+  background: var(--lb-surface);
+  border: 1px solid var(--lb-line);
+}
+.md-typeset .lb-try h2 { margin-top: 0; }
+
+/* Path cards. */
+.md-typeset .grid.cards.lb-paths > ul > li { border-left: 4px solid var(--lb-blue); }
+.md-typeset .grid.cards.lb-paths > ul > li:nth-child(2) { border-left-color: var(--lb-green); }
+.md-typeset .grid.cards.lb-paths > ul > li:nth-child(3) { border-left-color: var(--lb-amber); }
+.md-typeset .grid.cards.lb-paths > ul > li:nth-child(4) { border-left-color: var(--lb-pink); }
+
+/* ------------------------------------------------------------- content */
+
+/* Figures inside pages: white plate in both themes, since the figures are
+   drawn on white. */
+.md-typeset figure img,
+.md-typeset img.lb-figure {
+  background: #fff;
+  border: 1px solid var(--lb-line);
+  border-radius: 8px;
+  padding: 0.3rem;
+}
+.md-typeset figcaption { color: var(--lb-ink-2); font-size: 0.75rem; max-width: 46rem; }
+
+/* The embedded explorer. */
+.lb-embed {
+  width: 100%;
+  height: 640px;
+  border: 1px solid var(--lb-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+/* "Is / is not" pairs on the results pages. */
+.lb-isnot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  margin: 1rem 0;
+}
+@media screen and (max-width: 45em) {
+  .lb-isnot { grid-template-columns: minmax(0, 1fr); }
+}
+.lb-isnot > div {
+  border-radius: 10px;
+  padding: 0.3rem 1rem;
+  border: 1px solid var(--lb-line);
+  background: var(--lb-card);
+}
+.lb-isnot > div:first-child { border-top: 4px solid var(--lb-green); }
+.lb-isnot > div:last-child { border-top: 4px solid var(--lb-orange); }
+.md-typeset .lb-isnot h4 { margin-top: 0.6rem; }
+
+/* Tables: a little more air, and a light header. */
+.md-typeset table:not([class]) th { background: var(--lb-surface); }
+.md-typeset table:not([class]) { font-size: 0.74rem; }
+
+/* Keyboard-like file names in the step headers. */
+.md-typeset .lb-file {
+  font-family: var(--md-code-font-family);
+  font-size: 0.8em;
+  padding: 0.1em 0.45em;
+  border-radius: 4px;
+  background: var(--md-code-bg-color);
+}
+
+/* Buttons: primary in the layer blue, secondary outlined, in both themes. */
+.md-typeset .md-button--primary {
+  background-color: var(--lb-blue);
+  border-color: var(--lb-blue);
+  color: #fff;
+}
+.md-typeset .md-button--primary:hover,
+.md-typeset .md-button--primary:focus {
+  background-color: #1f63b8;
+  border-color: #1f63b8;
+  color: #fff;
+}
+.md-typeset .md-button:not(.md-button--primary) {
+  color: var(--md-typeset-a-color);
+  border-color: currentColor;
+}
+.md-typeset .md-button:not(.md-button--primary):hover {
+  background-color: var(--md-accent-fg-color--transparent);
+  color: var(--md-typeset-a-color);
+  border-color: currentColor;
+}
+
+/* Page titles in full ink (Material greys them by default). */
+.md-typeset h1 { color: var(--md-default-fg-color); }
