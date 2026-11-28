@@ -29,7 +29,7 @@ With `--figure` it also draws the layers to `results/figures/design.png`:
 
 <figure markdown>
 ![The design figure](../assets/example-design.png)
-<figcaption>Arcs will run from left to right, and from top to bottom within a column. If a
+<figcaption>Arcs will run from the top down, from a layer to the same layer or a lower one. If a
 variable is in the wrong place, change its layer or the order of the layers, and check
 again.</figcaption>
 </figure>

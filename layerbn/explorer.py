@@ -141,10 +141,9 @@ aside h2:first-child{margin-top:0}
   aside{border-left:0;border-top:1px solid var(--line);max-height:38vh}
 }
 .band{fill-opacity:.07}
-.bandt{font-size:11px;font-weight:650;fill:var(--ink)}
+.bandt{font-size:12px;font-weight:650;fill:var(--ink)}
 .timet{font-size:12px;font-weight:700;fill:var(--ink2)}
-.card{fill:#fff;stroke:var(--line);stroke-width:1}
-.card.target{stroke:var(--ink);stroke-width:1.6}
+.card{fill:#fff}
 .card.sel{stroke:var(--ink);stroke-width:1.6}
 .title{font-size:11.5px;font-weight:650;fill:var(--ink);cursor:pointer}
 .title:hover{text-decoration:underline}
@@ -154,7 +153,7 @@ aside h2:first-child{margin-top:0}
 .row{cursor:pointer}
 .row:hover .hit{fill:#00000008}
 .hit{fill:transparent}
-.arc{fill:none;stroke:#9aa3ad;stroke-linecap:round}
+.arc{fill:none;stroke-linecap:round;marker-end:url(#head)}
 .arc.dim{opacity:.10}
 .arc.hl{stroke:var(--ink);opacity:1}
 .delta{font-size:9.5px;font-variant-numeric:tabular-nums}
@@ -248,29 +247,30 @@ function compute(){
   if(!Object.keys(ev).length)pEvidence=1;
 }
 
-// ---------- layout --------------------------------------------------------------
-const W=232,ROW=16,HEAD=24,PADY=8,GAP=12,BAND_HEAD=26,BAND_PAD=12,BAND_GAP=22,COLGAP=110,TOP=44;
-const pos={};let bands=[],heads=[],totalW=0,totalH=0;
+// ---------- layout: layers as rows, from the top down ------------------------------
+const W=232,ROW=16,HEAD=26,PADY=8,GAPX=30,ROWGAP=78,INNER=40,GUTTER=170,TOP=26,PER_ROW=6;
+const pos={};let rows=[],totalW=0,totalH=0;
 function cardH(n){return HEAD+n.card*ROW+PADY;}
 function layout(){
-  const cols=[];
-  for(const l of M.layers){const last=cols[cols.length-1];
-    if(l.time&&last&&last[last.length-1].time===l.time)last.push(l);else cols.push([l]);}
-  let x=20,tall=0;bands=[];heads=[];
-  for(const col of cols){
-    const w=W+2*BAND_PAD;let y=TOP;
-    if(col[0].time)heads.push({x:x+w/2,y:TOP-4,t:col[0].time});
-    const yStart=col[0].time?TOP+14:TOP;y=yStart;
-    for(const l of col){
-      const ns=M.nodes.filter(n=>n.layer===l.name);if(!ns.length)continue;
-      const top=y;let yy=y+BAND_HEAD;
-      for(const n of ns){pos[n.id]={x:x+BAND_PAD,y:yy,h:cardH(n)};yy+=cardH(n)+GAP;}
-      const h=yy-GAP+BAND_PAD-top;bands.push({x,y:top,w,h,l,title:col[0].time?l.title:l.title+(l.time?" · "+l.time:"")});
-      y=top+h+BAND_GAP;
-    }
-    tall=Math.max(tall,y);x+=w+COLGAP;
+  rows=[];
+  const inner=new Set(M.arcs.filter(a=>byId[a.from]&&byId[a.to]&&byId[a.from].layer===byId[a.to].layer)
+                       .map(a=>byId[a.from].layer));
+  for(const l of M.layers){
+    const ns=M.nodes.filter(n=>n.layer===l.name);
+    for(let i=0;i<ns.length;i+=PER_ROW)rows.push({l,ns:ns.slice(i,i+PER_ROW),first:i===0});
   }
-  totalW=x-COLGAP+20;totalH=tall+20;
+  const widest=Math.max(1,...rows.map(r=>r.ns.length));
+  const contentW=widest*W+(widest-1)*GAPX;
+  let y=TOP;
+  rows.forEach((r,i)=>{
+    if(i)y+=r.first?ROWGAP:22;
+    if(r.first&&inner.has(r.l.name))y+=INNER;
+    r.top=y;r.h=Math.max(...r.ns.map(cardH));
+    let x=GUTTER+(contentW-(r.ns.length*W+(r.ns.length-1)*GAPX))/2;
+    for(const n of r.ns){pos[n.id]={x,y,h:cardH(n),row:i};x+=W+GAPX;}
+    y+=r.h;
+  });
+  totalW=GUTTER+contentW+30;totalH=y+30;
 }
 
 // ---------- drawing -------------------------------------------------------------
@@ -285,54 +285,80 @@ function draw(){
   const svg=document.getElementById("svg");svg.innerHTML="";
   svg.setAttribute("width",totalW);svg.setAttribute("height",totalH);
   const q=document.getElementById("q").value.trim().toLowerCase();
-  for(const b of bands){
-    el("rect",{x:b.x,y:b.y,width:b.w,height:b.h,rx:10,fill:b.l.colour,class:"band"},svg);
-    el("rect",{x:b.x+BAND_PAD,y:b.y+9,width:8,height:8,rx:2,fill:b.l.colour},svg);
-    el("text",{x:b.x+BAND_PAD+14,y:b.y+17,class:"bandt"},svg,trunc(b.title,34));
-  }
-  for(const h of heads)el("text",{x:h.x,y:h.y,"text-anchor":"middle",class:"timet"},svg,h.t);
+  const seen=new Set();
+  rows.forEach(r=>{
+    if(!r.first)return;
+    const last=rows.filter(o=>o.l===r.l).pop();
+    el("rect",{x:18,y:r.top,width:4,height:last.top+last.h-r.top,rx:2,fill:r.l.colour},svg);
+    const title=r.l.title+(r.l.time?" · "+r.l.time:"");
+    el("text",{x:32,y:r.top+14,class:"bandt"},svg,trunc(title,22));
+    seen.add(r.l.name);
+  });
+  const defs=el("defs",{},svg),mk=el("marker",{id:"head",viewBox:"0 0 10 10",refX:9,refY:5,
+    markerWidth:5,markerHeight:5,orient:"auto-start-reverse",markerUnits:"strokeWidth"},defs);
+  el("path",{d:"M0,1 L10,5 L0,9 z",fill:"#32475e"},mk);
   const gA=el("g",{},svg);
   if(document.getElementById("arcs").checked)drawArcs(gA);
   for(const n of M.nodes)drawNode(svg,n,q);
 }
-function anchor(id,side){const p=pos[id];return {x:p.x+(side>0?W:0),y:p.y+p.h/2};}
+// Arc colour: the blue side of RdBu, light (rarely found) to dark (always found).
+function arcColour(f){if(f==null)return "#56606d";const lo=[0xb4,0xd4,0xe8],hi=[0x05,0x30,0x61];
+  return "rgb("+lo.map((v,i)=>Math.round(v+(hi[i]-v)*Math.min(1,Math.max(0,f)))).join(",")+")";}
 function drawArcs(g){
   const max=Math.max(1e-9,...M.arcs.map(a=>a.strength||0));
+  // spread the arcs at one edge of a card, ordered by where their other end is
+  const ends={};
+  for(const a of M.arcs){const p=pos[a.from],c=pos[a.to];if(!p||!c)continue;
+    const same=p.row===c.row;
+    (ends[a.from+(same?"|t":"|b")]??=[]).push([c.x,a,"out"]);
+    (ends[a.to+"|t"]??=[]).push([p.x,a,"in"]);}
+  const port=new Map();
+  for(const k in ends){const [id,edge]=k.split("|"),p=pos[id],list=ends[k].sort((u,v)=>u[0]-v[0]);
+    const n=list.length,step=Math.min(22,(W-60)/Math.max(n-1,1));
+    list.forEach(([,a,end],i)=>port.set(a.from+">"+a.to+end,{x:p.x+W/2+(i-(n-1)/2)*step,y:edge==="t"?p.y:p.y+p.h}));}
   for(const a of M.arcs){
     const p=pos[a.from],c=pos[a.to];if(!p||!c)continue;
-    let d,mx;
-    if(Math.abs(p.x-c.x)<1){const x=p.x+W,bulge=18+Math.min(60,Math.abs(c.y-p.y)*.08);
-      const y1=p.y+p.h/2,y2=c.y+c.h/2;d=`M${x},${y1} C${x+bulge},${y1} ${x+bulge},${y2} ${x},${y2}`;}
-    else{const f=c.x>p.x?1:-1,A=anchor(a.from,f),B=anchor(a.to,-f),r=Math.max(40,Math.abs(B.x-A.x)*.4);
-      d=`M${A.x},${A.y} C${A.x+f*r},${A.y} ${B.x-f*r},${B.y} ${B.x},${B.y}`;}
-    const w=a.strength?0.8+2.2*Math.sqrt(a.strength/max):1.2;
-    const op=a.freq==null?0.55:0.2+0.7*a.freq;
+    const A=port.get(a.from+">"+a.to+"out"),B=port.get(a.from+">"+a.to+"in");
+    let d;
+    if(p.row===c.row){const lift=Math.min(INNER+ROWGAP*0.55,26+Math.abs(B.x-A.x)*0.09);
+      d=`M${A.x},${A.y} C${A.x},${A.y-lift} ${B.x},${B.y-lift} ${B.x},${B.y}`;}
+    else{const r=Math.max(30,(B.y-A.y)*0.45);d=`M${A.x},${A.y} C${A.x},${A.y+r} ${B.x},${B.y-r} ${B.x},${B.y}`;}
+    const w=a.strength?0.8+2.0*Math.sqrt(a.strength/max):1.2;
     const hl=selected&&(a.from===selected||a.to===selected);
-    const e=el("path",{d,class:"arc"+(selected&&!hl?" dim":"")+(hl?" hl":""),"stroke-width":w,"stroke-opacity":hl?1:op},g);
+    const e=el("path",{d,class:"arc"+(selected&&!hl?" dim":"")+(hl?" hl":""),"stroke-width":w,
+                       stroke:hl?null:arcColour(a.freq)},g);
     if(a.freq!=null&&a.freq<0.5)e.setAttribute("stroke-dasharray","5 4");
     el("title",{},e,`${byId[a.from].label} → ${byId[a.to].label}`+(a.freq!=null?` · in ${Math.round(a.freq*100)}% of resamples`:"")+(a.strength?` · MI ${a.strength.toFixed(2)} bits`:""));
   }
 }
+function lum(hex){const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);return .2126*v[0]+.7152*v[1]+.0722*v[2];}
+function mix(hex,share){const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+  return "rgb("+v.map(c=>Math.round(c+(255-c)*share)).join(",")+")";}
 function drawNode(svg,n,q){
   const p=pos[n.id],col=layerBy[n.layer].colour,ev=evidence[n.id];
   const dim=q&&!n.label.toLowerCase().includes(q);
   const g=el("g",{opacity:dim?0.25:1},svg);
-  el("rect",{x:p.x,y:p.y,width:W,height:p.h,rx:8,class:"card"+(n.target?" target":"")+(selected===n.id?" sel":"")},g);
-  el("rect",{x:p.x,y:p.y,width:4,height:p.h,rx:2,fill:col},g);
-  const t=el("text",{x:p.x+12,y:p.y+16,class:"title"},g,trunc(n.layer&&layerBy[n.layer].time?n.short:n.label,30)+(n.target?"  ◎":""));
+  const clip="c"+n.id.replace(/[^A-Za-z0-9_-]/g,"_");
+  const cp=el("clipPath",{id:clip},g);el("rect",{x:p.x,y:p.y,width:W,height:p.h,rx:7},cp);
+  el("rect",{x:p.x,y:p.y,width:W,height:p.h,rx:7,class:"card"+(selected===n.id?" sel":""),
+             stroke:n.target?col:mix(col,.45),"stroke-width":n.target?1.6:1},g);
+  el("rect",{x:p.x,y:p.y,width:W,height:HEAD-4,fill:n.target?col:mix(col,.8),"clip-path":`url(#${clip})`},g);
+  const ink=n.target&&lum(col)<.55?"#ffffff":"#1f2328";
+  const t=el("text",{x:p.x+10,y:p.y+15.5,class:"title",style:`fill:${ink}`},g,trunc(n.layer&&layerBy[n.layer].time?n.short:n.label,30));
   t.addEventListener("click",()=>{selected=selected===n.id?null:n.id;draw();side();});
   el("title",{},t,n.label+" — click for the CPT");
-  if(ev)el("text",{x:p.x+W-8,y:p.y+16,"text-anchor":"end",class:"sl"},g,"evidence ✕").addEventListener("click",()=>{delete evidence[n.id];update();});
+  if(ev)el("text",{x:p.x+W-8,y:p.y+15.5,"text-anchor":"end",class:"sl",style:`fill:${ink}`},g,"evidence ✕").addEventListener("click",()=>{delete evidence[n.id];update();});
   const lab=96,bx=p.x+12+lab,bw=W-12-lab-48;
+  const barCol=lum(col)<.85?col:"#8c959f";
   n.states.forEach((s,i)=>{
     const y=p.y+HEAD+i*ROW,v=post[n.id][i],pr=prior[n.id][i],on=ev&&ev.has(i);
     const r=el("g",{class:"row"},g);
     el("rect",{x:p.x+6,y:y,width:W-12,height:ROW,class:"hit",rx:4},r);
     if(on)el("rect",{x:p.x+6,y:y,width:W-12,height:ROW,rx:4,fill:"#1f232812"},r);
     el("text",{x:p.x+12,y:y+11.5,class:"sl","font-weight":on?700:400,fill:on?"#1f2328":null},r,trunc(s,16));
-    el("rect",{x:bx,y:y+3.5,width:bw,height:9,rx:4.5,class:"track"},r);
-    const fill=n.missing[i]?MISS:col;
-    el("rect",{x:bx,y:y+3.5,width:Math.max(1.5,bw*v),height:9,rx:4.5,fill:on?"#1f2328":fill,opacity:hasEv()&&ev&&!on?0.35:1},r);
+    el("rect",{x:bx,y:y+3.5,width:bw,height:9,rx:2,class:"track"},r);
+    const fill=n.missing[i]?MISS:barCol;
+    el("rect",{x:bx,y:y+3.5,width:Math.max(1.5,bw*v),height:9,rx:2,fill:on?"#1f2328":fill,opacity:hasEv()&&ev&&!on?0.35:1},r);
     if(hasEv()&&showChg()&&Math.abs(v-pr)>0.0005)el("rect",{x:bx+bw*pr-1,y:y+1.5,width:2,height:13,rx:1,fill:"#1f2328",opacity:.55},r);
     el("text",{x:p.x+W-8,y:y+11.5,"text-anchor":"end",class:"pc","font-weight":on?700:400},r,pct(v));
     r.addEventListener("click",e=>{toggle(n.id,i,e.shiftKey||e.metaKey||e.ctrlKey);});

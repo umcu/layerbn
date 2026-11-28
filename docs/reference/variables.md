@@ -69,5 +69,5 @@ at every time point.
 ## Targets
 
 Targets are the variables you are mainly interested in. They are the default for
-`importance`, `profiles` and `sweep`, and they are drawn with a heavy outline. If no variable
+`importance`, `profiles` and `sweep`, and they get a solid title strip in the figures. If no variable
 is marked, the variables of the last layer of the network are used.

@@ -7,30 +7,32 @@ PDF (vector, with editable text) side by side.
 
 Conventions, in every figure:
 
-* Colour identifies **layers** (one colour per layer, the same at every time
-  point) and, separately, encodes **arc stability** on a one-hue grey ramp,
-  so the two never compete. Layers are also named directly on the figure, so
-  nothing depends on colour alone.
+* One palette, ColorBrewer **RdBu**. Layers take colours along it in causal
+  order, from blue (first) to red (last), the same at every time point.
+  **Arc stability** runs along the blue side of the palette, light to dark.
+  Layers are also named directly on the figure, so nothing depends on colour
+  alone.
 * Text is always in the ink colours; colour is carried by marks.
-* The network is read from left to right, and from top to bottom within a
-  column. An arc never points against that direction.
+* The network is read from the top down: the first layer is the top row and
+  the outcome the bottom row. An arc never points upwards.
 
 The network figure
 ------------------
-Layers are drawn as bands, each layer its own column. With repeated
-measures, layers are grouped in one column per time point and the same
-variable keeps the same row in every column, so a variable followed over time
-forms a horizontal line.
+Each layer is a row, named in the left margin beside a rule in its colour.
+Each variable is a card with its name in a strip tinted in the layer colour
+and its marginal distribution in the fitted network as one bar per state.
+With repeated measures each time point is headed in the margin, and the same
+variable keeps the same horizontal position at every time point.
 
 * arc **width**: mutual information between parent and child, in bits
-* arc **colour**: share of bootstrap resamples that contain the arc
+* arc **darkness**: share of bootstrap resamples that contain the arc
 * **dashed** arc: in fewer than half of the resamples
-* **percentage** on each arc: the same share, outlined in the arc's colour
-* **heavy outline**: target variable
+* **percentage** beside each arc: the same share
+* **solid title strip**: a target
 
-Arcs that skip a column are routed through the gaps between boxes, and the
-arcs at one side of a box are spread along it, so no arc runs behind a box
-and no two arcs end in one point.
+Arcs that skip a row are routed through the gaps between cards, arcs inside a
+row arch above it, and the arcs at one edge of a card are spread along it, so
+no arc runs behind a card and no two arcs end in one point.
 """
 from __future__ import annotations
 
@@ -54,14 +56,19 @@ INK_3 = "#8c959f"
 GRID = "#e6e8eb"
 SURFACE = "#ffffff"
 
-# Categorical colours for series in the non-network figures. Same fixed order
-# as the layer colours in `layerbn.design`.
-SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-          "#e87ba4", "#008300", "#6250d6", "#e34948")
+# One palette throughout: ColorBrewer RdBu, from dark red to dark blue. Layers
+# take colours along it in causal order (see `layerbn.design.layer_colours`);
+# series in the charts alternate between its blue and red sides, strongest
+# first.
+RDBU = ("#67001f", "#b2182b", "#d6604d", "#f4a582", "#fddbc7", "#f7f7f7",
+        "#d1e5f0", "#92c5de", "#4393c3", "#2166ac", "#053061")
+SERIES = ("#2166ac", "#b2182b", "#4393c3", "#d6604d",
+          "#053061", "#67001f", "#92c5de", "#f4a582")
 
-# Arc stability: one hue (grey), light to dark.
-_ARC_LOW = (0xa9, 0xb1, 0xba)
-_ARC_HIGH = (0x17, 0x21, 0x2b)
+# Arc stability: the blue side of RdBu, from light blue (rarely found) to the
+# palette's darkest blue (found in every resample).
+_ARC_LOW = (0xb4, 0xd4, 0xe8)
+_ARC_HIGH = (0x05, 0x30, 0x61)
 
 STYLE = {
     "font.family": "sans-serif",
@@ -102,7 +109,7 @@ def _mix(hex_colour: str, other: str, share: float) -> str:
 def arc_colour(frequency: float | None) -> str:
     """Grey for an arc, darker the more resamples contain it."""
     if frequency is None or np.isnan(frequency):
-        return "#4b5560"
+        return "#56606d"
     f = min(max(float(frequency), 0.0), 1.0)
     rgb = [round(lo + (hi - lo) * f) for lo, hi in zip(_ARC_LOW, _ARC_HIGH, strict=True)]
     return "#" + "".join(f"{c:02x}" for c in rgb)
@@ -160,6 +167,8 @@ class FigNode:
     label: str                     # full label
     short: str                     # without the time point
     is_target: bool = False
+    states: tuple[str, ...] = ()   # readable states, drawn as bars when probs are given
+    probs: tuple[float, ...] = ()  # marginal probability of each state
 
 
 @dataclass(frozen=True)
@@ -185,25 +194,28 @@ class _Box:
     layer: FigLayer
     x: float = 0.0
     y: float = 0.0
-    col: int = 0
+    col: int = 0                   # the visual row it is in
+    top: float = 0.0
+    bottom: float = 0.0
 
 
 # ---------------------------------------------------------------------------
 # the network figure
 # ---------------------------------------------------------------------------
 
-NODE_W = 1.95
-NODE_H = 0.47
-NODE_GAP = 0.13
-BAND_HEAD = 0.34
-BAND_PAD = 0.12
-BAND_GAP = 0.28
-COL_GAP = 1.25
-MAX_PER_SUBCOLUMN = 10
+CARD_W = 2.10             # width of a variable card
+HEAD_H = 0.30             # its title strip
+STATE_H = 0.150           # one line per state
+CARD_PAD = 0.10           # space under the last state
+GAP_X = 0.42              # between two cards in a row
+ROW_GAP = 0.95            # between two rows: arcs and percentages live here
+SUB_GAP = 0.30            # between the sub-rows of a long layer
+GUTTER = 1.75             # left margin with the layer names
+MAX_PER_ROW = 6
 
 
 def _columns(layers: Sequence[FigLayer], layout: str) -> list[list[FigLayer]]:
-    """Group layers into columns. Layers in one column are stacked top to bottom."""
+    """Group layers by time point. Used to head each time point in the figure."""
     if layout == "columns":
         return [[layer] for layer in layers]
     columns: list[list[FigLayer]] = []
@@ -213,6 +225,23 @@ def _columns(layers: Sequence[FigLayer], layout: str) -> list[list[FigLayer]]:
         else:
             columns.append([layer])
     return columns
+
+
+def _luminance(hex_colour: str) -> float:
+    from matplotlib.colors import to_rgb
+    r, g, b = to_rgb(hex_colour)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _card_height(node: FigNode) -> float:
+    if not node.states:
+        return HEAD_H
+    return HEAD_H + len(node.states) * STATE_H + CARD_PAD
+
+
+def _clip(text: str, n: int) -> str:
+    text = str(text)
+    return text if len(text) <= n else text[: max(n - 1, 1)].rstrip() + "…"
 
 
 def plot_network(
@@ -227,13 +256,20 @@ def plot_network(
     max_arc_labels: int = 60,
     legend: bool = True,
 ) -> Any:
-    """Draw layers and arcs.
+    """Draw layers and arcs, from the top down.
 
-    Arcs that skip a column are routed through the free space between the
-    boxes of the columns they cross, so they never run behind a variable.
-    Each label sits on its own arc, at a place where it covers no box, no
-    other label and as few other arcs as possible, and is outlined in the
-    colour of its arc.
+    Each layer is a row, in causal order from top to bottom, named in the left
+    margin beside a rule in its colour. Each variable is a card: its name in a
+    strip tinted in the layer's colour (solid for a target) and, when the
+    node has `states` and `probs`, one bar per state with its probability.
+    Arcs run downwards, darker and wider the more stable and informative,
+    each with its percentage beside it.
+
+    Arcs that skip a row are routed through the gaps between the cards of the
+    rows they cross, so they never run behind a variable, and the arcs at one
+    edge of a card are spread along it. Each percentage sits on its own arc,
+    at a place where it covers no card, no other percentage and as few other
+    arcs as possible.
 
     Parameters
     ----------
@@ -241,9 +277,9 @@ def plot_network(
         What to draw. An arc's `strength` sets its width and its `frequency`
         its colour; either may be `None`.
     layout : {"auto", "columns", "grid"}
-        `columns`: one column per layer. `grid`: one column per time point,
-        layers stacked inside it. `auto` uses `grid` if any layer has a time
-        point.
+        With `grid` (the default when layers have time points) each time
+        point is headed in the margin; otherwise the time point is part of
+        the layer name.
     highlight : sequence of column names
         Draw only the arcs that touch these variables at full strength and
         fade the others. Useful for reading the neighbourhood of a target.
@@ -251,52 +287,68 @@ def plot_network(
         By default every arc with a known frequency has its percentage
         written on it. With a value, only arcs below it are labelled. At most
         `max_arc_labels` arcs are labelled, the least stable first.
-
     """
     import matplotlib.pyplot as plt
+    from matplotlib import patheffects
     from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
     from matplotlib.path import Path as MPath
 
     if layout == "auto":
         layout = "grid" if any(layer.time for layer in layers) else "columns"
-    columns = _columns(layers, layout)
-    has_time_header = layout == "grid" and any(c[0].time for c in columns)
+    groups = _columns(layers, layout)
+    first_of_time = {group[0].name for group in groups if group[0].time} \
+        if layout == "grid" else set()
 
-    # ---- geometry (all in inches) --------------------------------------------
-    left, top_margin = 0.35, 0.95 if (title or subtitle) else 0.35
-    time_head = 0.38 if has_time_header else 0.0
+    # ---- geometry (inches; y grows downwards) ----------------------------------
+    left = 0.40
+    top_margin = 1.05 if (title or subtitle) else 0.35
+    # Visual rows: a layer is one row, or several sub-rows when it is long.
+    rows: list[dict[str, Any]] = []
+    for layer in layers:
+        nodes = list(layer.nodes)
+        chunks = [nodes[i:i + MAX_PER_ROW] for i in range(0, len(nodes), MAX_PER_ROW)] or [[]]
+        for j, chunk in enumerate(chunks):
+            rows.append({"layer": layer, "nodes": chunk, "first": j == 0,
+                         "last": j == len(chunks) - 1,
+                         "height": max((_card_height(n) for n in chunk), default=HEAD_H)})
+    # A layer with arcs inside it gets more room above it, for their arches.
+    layer_of = {n.column: layer.name for layer in layers for n in layer.nodes}
+    inner = {layer_of[a.parent] for a in arcs
+             if a.parent in layer_of and layer_of.get(a.child) == layer_of[a.parent]}
+    widest = max((len(r["nodes"]) for r in rows), default=1)
+    content_w = widest * CARD_W + (widest - 1) * GAP_X
+    x_content = left + GUTTER
+
     boxes: dict[str, _Box] = {}
-    band_rects: list[tuple[FigLayer, float, float, float, float]] = []   # layer, x, y, w, h
-    band_column: list[int] = []
-    column_x: list[tuple[float, float]] = []                              # x0, width
+    y = top_margin
+    layer_span: dict[str, list[float]] = {}
+    for i, row in enumerate(rows):
+        gap = 0.0
+        if i:
+            # Without arcs (the design figure) the rows can sit closer.
+            gap = (ROW_GAP if arcs else 0.42) if row["first"] else SUB_GAP
+        if row["first"] and row["layer"].name in inner:
+            gap += 0.55
+        y += gap
+        row["gap"] = gap
+        if row["layer"].name in first_of_time:
+            y += 0.22                                      # room for the time heading
+        row["top"], row["bottom"] = y, y + row["height"]
+        k = len(row["nodes"])
+        x0 = x_content + (content_w - (k * CARD_W + (k - 1) * GAP_X)) / 2
+        for j, node in enumerate(row["nodes"]):
+            cx = x0 + CARD_W / 2 + j * (CARD_W + GAP_X)
+            box = _Box(node, row["layer"], cx, y + _card_height(node) / 2, i)
+            box.top, box.bottom = y, y + _card_height(node)
+            boxes[node.column] = box
+        span = layer_span.setdefault(row["layer"].name, [y, y])
+        span[1] = y + row["height"]
+        y += row["height"]
+    bottom = y
 
-    x = left
-    tallest = 0.0
-    for col_index, column in enumerate(columns):
-        widest = 1
-        for layer in column:
-            widest = max(widest, math.ceil(len(layer.nodes) / MAX_PER_SUBCOLUMN))
-        width = widest * NODE_W + (widest - 1) * 0.15 + 2 * BAND_PAD
-        y = top_margin + time_head
-        for layer in column:
-            n = len(layer.nodes)
-            per = math.ceil(n / widest)
-            height = BAND_HEAD + per * NODE_H + (per - 1) * NODE_GAP + BAND_PAD
-            band_rects.append((layer, x, y, width, height))
-            band_column.append(col_index)
-            for i, node in enumerate(layer.nodes):
-                sub, row = divmod(i, per)
-                bx = x + BAND_PAD + NODE_W / 2 + sub * (NODE_W + 0.15)
-                by = y + BAND_HEAD + NODE_H / 2 + row * (NODE_H + NODE_GAP)
-                boxes[node.column] = _Box(node, layer, bx, by, col_index)
-            y += height + BAND_GAP
-        tallest = max(tallest, y - BAND_GAP)
-        column_x.append((x, width))
-        x += width + COL_GAP
-
-    width_in = x - COL_GAP + left
-    legend_h = 1.05 if legend else 0.2
-    height_in = tallest + legend_h
+    width_in = x_content + content_w + 0.45
+    legend_h = 1.0 if legend else 0.3
+    height_in = bottom + legend_h
 
     with _rc():
         fig = plt.figure(figsize=(width_in, height_in))
@@ -306,33 +358,26 @@ def plot_network(
         ax.axis("off")
 
         if title:
-            ax.text(left, 0.30, title, fontsize=13, fontweight="bold", va="center")
+            ax.text(left, 0.34, title, fontsize=13, fontweight="bold", va="center",
+                    color=INK)
         if subtitle:
-            ax.text(left, 0.62, subtitle, fontsize=8.5, color=INK_2, va="center")
+            ax.text(left, 0.66, subtitle, fontsize=8.4, color=INK_2, va="center")
 
-        # time headers
-        if has_time_header:
-            for (x0, w), column in zip(column_x, columns, strict=True):
-                if column[0].time:
-                    ax.text(x0 + w / 2, top_margin + 0.12, column[0].time,
-                            ha="center", va="center", fontsize=10.5, fontweight="bold")
-                    ax.plot([x0, x0 + w], [top_margin + 0.30] * 2, color=INK_3,
-                            lw=0.8, solid_capstyle="butt")
+        # layer names in the margin, beside a rule in the layer's colour
+        for layer in layers:
+            y0, y1 = layer_span[layer.name]
+            if layer.name in first_of_time:
+                ax.text(left, y0 - 0.16, str(layer.time).upper(), fontsize=7.6,
+                        fontweight="bold", color=INK_3, va="center")
+            heading = layer.title if layout == "grid" else (
+                f"{layer.title} · {layer.time}" if layer.time else layer.title)
+            ax.plot([left, left], [y0 + 0.02, y1 - 0.02], color=layer.colour, lw=3.0,
+                    solid_capstyle="round", zorder=1)
+            ax.text(left + 0.14, y0 + 0.12, _wrap(heading, 20, 3), fontsize=8.6,
+                    fontweight="bold", color=INK, va="top", ha="left", zorder=1,
+                    linespacing=1.15)
 
-        # bands: tinted background, title with a colour key
-        for layer, bx, by, bw, bh in band_rects:
-            ax.add_patch(FancyBboxPatch(
-                (bx, by), bw, bh, boxstyle="round,pad=0,rounding_size=0.10",
-                facecolor=_mix(layer.colour, "#ffffff", 0.90), edgecolor="none", zorder=0))
-            ax.add_patch(Rectangle((bx + BAND_PAD, by + 0.11), 0.11, 0.11,
-                                   facecolor=layer.colour, edgecolor="none", zorder=1))
-            heading = layer.title
-            if layout == "columns" and layer.time:
-                heading = f"{layer.title} · {layer.time}"
-            ax.text(bx + BAND_PAD + 0.18, by + 0.165, _wrap(heading, 28, 1),
-                    fontsize=8.5, fontweight="bold", color=INK, va="center", zorder=1)
-
-        # arcs
+        # ---- arcs ---------------------------------------------------------------
         highlight_set = set(highlight)
         strengths = [a.strength for a in arcs if a.strength is not None
                      and np.isfinite(a.strength)]
@@ -340,8 +385,8 @@ def plot_network(
 
         def width_of(arc: FigArc) -> float:
             if arc.strength is None or not np.isfinite(arc.strength) or top <= 0:
-                return 1.6
-            return 0.9 + 3.1 * math.sqrt(arc.strength / top)
+                return 1.2
+            return 0.6 + 1.9 * math.sqrt(arc.strength / top)
 
         def faded(arc: FigArc) -> bool:
             return bool(highlight_set) and not ({arc.parent, arc.child} & highlight_set)
@@ -355,97 +400,93 @@ def plot_network(
             key=lambda a: a.frequency)[:max_arc_labels]
         labelled = {(a.parent, a.child) for a in label_candidates}
 
-        # Free vertical corridors in each column, for arcs that cross it.
-        y_low = top_margin + time_head - 0.10
-        y_high = tallest + 0.10
-        blocked: dict[int, list[tuple[float, float]]] = {k: [] for k in range(len(columns))}
+        def same_row(arc: FigArc) -> bool:
+            return boxes[arc.parent].col == boxes[arc.child].col
+
+        # Free horizontal corridors in each row, for arcs that pass through it.
+        x_low, x_high = x_content - 0.35, x_content + content_w + 0.35
+        blocked: dict[int, list[tuple[float, float]]] = {i: [] for i in range(len(rows))}
         for box in boxes.values():
-            blocked[box.col].append((box.y - NODE_H / 2 - 0.03, box.y + NODE_H / 2 + 0.03))
-        for (_, _, by, _, _), k in zip(band_rects, band_column, strict=True):
-            blocked[k].append((by, by + BAND_HEAD - 0.04))
+            blocked[box.col].append((box.x - CARD_W / 2 - 0.05, box.x + CARD_W / 2 + 0.05))
 
         def corridors(k: int) -> list[tuple[float, float]]:
-            free, y = [], y_low
+            free, x = [], x_low
             for lo, hi in sorted(blocked[k]):
-                if lo > y:
-                    free.append((y, lo))
-                y = max(y, hi)
-            if y < y_high:
-                free.append((y, y_high))
-            return free or [(y_low, y_high)]
+                if lo > x:
+                    free.append((x, lo))
+                x = max(x, hi)
+            if x < x_high:
+                free.append((x, x_high))
+            return free or [(x_low, x_high)]
 
         corridor_use: dict[tuple[int, float], int] = {}
 
         def s_curve(a, b):
-            reach = max(0.2, 0.42 * abs(b[0] - a[0]))
-            sign = 1 if b[0] >= a[0] else -1
-            return (a, (a[0] + sign * reach, a[1]), (b[0] - sign * reach, b[1]), b)
+            reach = max(0.16, 0.45 * abs(b[1] - a[1]))
+            return (a, (a[0], a[1] + reach), (b[0], b[1] - reach), b)
 
-        # Ports: the arcs at one side of a box are spread along that side,
-        # ordered by where their other end is, so they do not start or end in
-        # one point and do not cross right at the box.
-        def sides(arc: FigArc) -> tuple[int, int]:
-            p, c = boxes[arc.parent], boxes[arc.child]
-            if abs(p.x - c.x) < 1e-6:
-                return 1, 1
-            return (1, -1) if c.x > p.x else (-1, 1)
+        # Ports: the arcs at one edge of a card are spread along it, ordered by
+        # where their other end is, so they do not meet in one point.
+        def edges(arc: FigArc) -> tuple[str, str]:
+            # Inside one row an arc leaves and enters through the top edges and
+            # arches through the open space above the row, so it never crosses
+            # a card in between.
+            return ("top", "top") if same_row(arc) else ("bottom", "top")
 
-        at_side: dict[tuple[str, int], list[tuple[float, tuple[str, str], str]]] = {}
+        at_edge: dict[tuple[str, str], list[tuple[float, tuple[str, str], str]]] = {}
         for arc in ordered:
-            out_side, in_side = sides(arc)
+            out_edge, in_edge = edges(arc)
             key = (arc.parent, arc.child)
-            at_side.setdefault((arc.parent, out_side), []).append(
-                (boxes[arc.child].y, key, "out"))
-            at_side.setdefault((arc.child, in_side), []).append(
-                (boxes[arc.parent].y, key, "in"))
-        port: dict[tuple[tuple[str, str], str], float] = {}
-        for (column, _), ends in at_side.items():
+            at_edge.setdefault((arc.parent, out_edge), []).append(
+                (boxes[arc.child].x, key, "out"))
+            at_edge.setdefault((arc.child, in_edge), []).append(
+                (boxes[arc.parent].x, key, "in"))
+        port: dict[tuple[tuple[str, str], str], tuple[float, float]] = {}
+        for (column, edge), ends in at_edge.items():
+            box = boxes[column]
             ends.sort(key=lambda e: e[0])
             n = len(ends)
-            step = min(0.085, (NODE_H - 0.14) / max(n - 1, 1))
+            step = min(0.20, (CARD_W - 0.6) / max(n - 1, 1))
+            y_edge = box.top if edge == "top" else box.bottom
             for i, (_, key, end) in enumerate(ends):
-                port[(key, end)] = boxes[column].y + (i - (n - 1) / 2) * step
+                port[(key, end)] = (box.x + (i - (n - 1) / 2) * step, y_edge)
 
-        def route(p: _Box, c: _Box) -> list[tuple]:
+        def route(arc: FigArc) -> list[tuple]:
             """The arc as a list of cubic Bezier segments."""
-            key = (p.node.column, c.node.column)
-            y0, y1 = port[(key, "out")], port[(key, "in")]
-            if abs(p.x - c.x) < 1e-6:                       # same sub-column
-                p0 = (p.x + NODE_W / 2, y0)
-                p1 = (c.x + NODE_W / 2, y1)
-                # Longer arcs bulge further, so arcs inside a layer nest.
-                bulge = min(0.22 + 0.22 * abs(c.y - p.y), 1.1)
-                return [(p0, (p0[0] + bulge, p0[1]), (p1[0] + bulge, p1[1]), p1)]
-            sign = 1 if c.x > p.x else -1
-            p0 = (p.x + sign * NODE_W / 2, y0)
-            p1 = (c.x - sign * NODE_W / 2, y1)
-            if sign < 0 or c.col - p.col < 2:
+            key = (arc.parent, arc.child)
+            p, c = boxes[arc.parent], boxes[arc.child]
+            p0, p1 = port[(key, "out")], port[(key, "in")]
+            if same_row(arc):                       # inside one row: an arch above it
+                # Wider arches rise higher, so arches inside one row nest.
+                room = rows[p.col]["gap"] or ROW_GAP
+                lift = min(0.30 + 0.09 * abs(p1[0] - p0[0]), room * 0.62)
+                return [(p0, (p0[0], p0[1] - lift), (p1[0], p1[1] - lift), p1)]
+            if c.col - p.col < 2:
                 return [s_curve(p0, p1)]
             points = [p0]
             for k in range(p.col + 1, c.col):
-                x0, w = column_x[k]
-                share = (x0 + w / 2 - p0[0]) / (p1[0] - p0[0])
-                wanted = p0[1] + (p1[1] - p0[1]) * share
+                share = ((rows[k]["top"] + rows[k]["bottom"]) / 2 - p0[1]) / (p1[1] - p0[1])
+                wanted = p0[0] + (p1[0] - p0[0]) * share
                 best = None
                 for lo, hi in corridors(k):
-                    pad = min(0.07, (hi - lo) / 2)
-                    y = min(max(wanted, lo + pad), hi - pad)
-                    cost = abs(y - wanted) + (0.3 if hi - lo < 0.12 else 0.0)
+                    pad = min(0.10, (hi - lo) / 2)
+                    x = min(max(wanted, lo + pad), hi - pad)
+                    cost = abs(x - wanted) + (0.3 if hi - lo < 0.15 else 0.0)
                     if best is None or cost < best[0]:
-                        best = (cost, y, lo, hi)
-                _, y, lo, hi = best
+                        best = (cost, x, lo, hi)
+                _, x, lo, hi = best
                 used = corridor_use.get((k, lo), 0)
                 corridor_use[(k, lo)] = used + 1
                 if used:
-                    step = 0.05 * ((used + 1) // 2) * (1 if used % 2 else -1)
-                    y = min(max(y + step, lo + 0.03), hi - 0.03)
-                points += [(x0 - 0.04, y), (x0 + w + 0.04, y)]
+                    step = 0.06 * ((used + 1) // 2) * (1 if used % 2 else -1)
+                    x = min(max(x + step, lo + 0.03), hi - 0.03)
+                points += [(x, rows[k]["top"] - 0.06), (x, rows[k]["bottom"] + 0.06)]
             points.append(p1)
             segments = []
             for i, (a, b) in enumerate(zip(points, points[1:], strict=False)):
-                if i % 2:                                    # straight across a column
-                    segments.append((a, (a[0] + (b[0] - a[0]) / 3, a[1]),
-                                     (a[0] + 2 * (b[0] - a[0]) / 3, b[1]), b))
+                if i % 2:                                    # straight through a row
+                    segments.append((a, (a[0], a[1] + (b[1] - a[1]) / 3),
+                                     (b[0], a[1] + 2 * (b[1] - a[1]) / 3), b))
                 else:
                     segments.append(s_curve(a, b))
             return segments
@@ -463,7 +504,7 @@ def plot_network(
             dist = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(xy, axis=0).T))])
             return xy, dist, np.concatenate(seg)
 
-        routes = {(a.parent, a.child): route(boxes[a.parent], boxes[a.child]) for a in ordered}
+        routes = {(a.parent, a.child): route(a) for a in ordered}
         samples = {key: sample(segments) for key, segments in routes.items()}
 
         for arc in ordered:
@@ -474,20 +515,20 @@ def plot_network(
                 vertices += [b, cc, d]
             path = MPath(vertices, [MPath.MOVETO] + [MPath.CURVE4] * (3 * len(segments)))
             dashed = arc.frequency is not None and arc.frequency < 0.5
-            alpha = 0.13 if faded(arc) else 1.0
+            alpha = 0.12 if faded(arc) else 1.0
             ax.add_patch(FancyArrowPatch(
-                path=path, arrowstyle="-|>", mutation_scale=7 + 2.2 * lw,
-                linewidth=lw, color=arc_colour(arc.frequency), alpha=alpha,
-                linestyle=(0, (4.5, 2.5)) if dashed else "solid",
-                shrinkA=0, shrinkB=1.2, zorder=2, capstyle="butt"))
+                path=path, arrowstyle="-|>,head_length=0.62,head_width=0.28",
+                mutation_scale=5.5 + 1.0 * lw, linewidth=lw,
+                color=arc_colour(arc.frequency), alpha=alpha,
+                linestyle=(0, (3.2, 2.2)) if dashed else "solid",
+                shrinkA=0, shrinkB=0.4, zorder=2, capstyle="round", joinstyle="round"))
 
-        # Percentages: each on its own arc, clear of boxes, headings and each other.
-        obstacles = [(b.x - NODE_W / 2 - 0.02, b.y - NODE_H / 2 - 0.02,
-                      b.x + NODE_W / 2 + 0.02, b.y + NODE_H / 2 + 0.02)
-                     for b in boxes.values()]
-        obstacles += [(bx, by, bx + bw, by + BAND_HEAD - 0.02)
-                      for _, bx, by, bw, _ in band_rects]
+        # Percentages: each on its own arc, clear of the cards and each other,
+        # over a white halo instead of in a box.
+        obstacles = [(b.x - CARD_W / 2 - 0.03, b.top - 0.03, b.x + CARD_W / 2 + 0.03,
+                      b.bottom + 0.03) for b in boxes.values()]
         placed: list[tuple[float, float, float, float]] = []
+        halo = [patheffects.withStroke(linewidth=3.2, foreground=SURFACE)]
 
         def overlaps(r, others) -> bool:
             return any(r[0] < o[2] and o[0] < r[2] and r[1] < o[3] and o[1] < r[3]
@@ -499,20 +540,18 @@ def plot_network(
             xy, dist, seg = samples[key]
             length = dist[-1]
             text = f"{round(arc.frequency * 100)}%"
-            half_w, half_h = (0.055 * len(text) + 0.09) / 2, 0.085
-            # Preferred spot: in the open gap before the child's column, or the
-            # middle of an arc inside one column.
-            last = seg == seg.max()
-            if abs(boxes[arc.parent].x - boxes[arc.child].x) < 1e-6:
+            half_w, half_h = (0.05 * len(text) + 0.06) / 2, 0.07
+            if same_row(arc):
                 preferred = length / 2
             else:
-                gap_x = xy[-1, 0] - (1 if xy[-1, 0] > xy[0, 0] else -1) * COL_GAP * 0.5
-                idx = np.where(last)[0]
-                preferred = dist[idx[np.argmin(abs(xy[idx, 0] - gap_x))]]
+                # In the open gap above the child's row.
+                idx = np.where(seg == seg.max())[0]
+                target_y = xy[-1, 1] - ROW_GAP * 0.42
+                preferred = dist[idx[np.argmin(abs(xy[idx, 1] - target_y))]]
             others = [samples[k][0] for k in samples if k != key]
             best = None
             for i in range(len(dist)):
-                if dist[i] < min(0.2, length * 0.15) or length - dist[i] < min(0.22, length * 0.2):
+                if dist[i] < min(0.18, length * 0.15) or length - dist[i] < min(0.2, length * 0.2):
                     continue
                 x, y = xy[i]
                 rect = (x - half_w, y - half_h, x + half_w, y + half_h)
@@ -530,77 +569,108 @@ def plot_network(
                 best = (0, x, y, (x - half_w, y - half_h, x + half_w, y + half_h))
             _, x, y, rect = best
             placed.append(rect)
-            ax.text(x, y, text, fontsize=7, color=INK, ha="center", va="center", zorder=4,
-                    bbox={"boxstyle": "round,pad=0.18", "fc": SURFACE,
-                          "ec": arc_colour(arc.frequency), "lw": 0.7})
+            ax.text(x, y, text, fontsize=6.8, color=INK, ha="center", va="center",
+                    zorder=4, path_effects=halo)
 
-        # nodes
+        # ---- cards ------------------------------------------------------------------
         touched = ({n for a in arcs for n in (a.parent, a.child)
                     if a.parent in highlight_set or a.child in highlight_set}
                    | highlight_set)
         for box in boxes.values():
             node, layer = box.node, box.layer
             dim = bool(highlight_set) and node.column not in touched
-            heavy = node.is_target
-            ax.add_patch(FancyBboxPatch(
-                (box.x - NODE_W / 2, box.y - NODE_H / 2), NODE_W, NODE_H,
-                boxstyle="round,pad=0,rounding_size=0.08",
-                facecolor=_mix(layer.colour, "#ffffff", 0.80),
-                edgecolor=layer.colour, linewidth=2.4 if heavy else 1.1,
-                alpha=0.35 if dim else 1.0, zorder=3))
+            alpha = 0.35 if dim else 1.0
+            colour = layer.colour
+            h = box.bottom - box.top
+            x0 = box.x - CARD_W / 2
+            card = FancyBboxPatch(
+                (x0, box.top), CARD_W, h, boxstyle="round,pad=0,rounding_size=0.06",
+                facecolor=SURFACE, edgecolor=colour if node.is_target else
+                _mix(colour, "#ffffff", 0.45),
+                linewidth=1.6 if node.is_target else 0.8, alpha=alpha, zorder=3)
+            ax.add_patch(card)
+            strip = Rectangle((x0, box.top), CARD_W, min(HEAD_H, h),
+                              facecolor=colour if node.is_target else
+                              _mix(colour, "#ffffff", 0.80),
+                              edgecolor="none", alpha=alpha, zorder=3.1)
+            ax.add_patch(strip)
+            strip.set_clip_path(card)
+            head_ink = ("#ffffff" if node.is_target and _luminance(colour) < 0.55 else INK)
             text = node.short if layout == "grid" and layer.time else node.label
-            ax.text(box.x, box.y, _wrap(text, 27, 3), ha="center", va="center",
-                    fontsize=7.6, fontweight="bold" if heavy else "normal",
-                    color=INK, alpha=0.45 if dim else 1.0, zorder=5, linespacing=1.15)
+            ax.text(x0 + 0.09, box.top + HEAD_H / 2, _clip(text, 34), fontsize=7.4,
+                    fontweight="bold", color=head_ink, va="center", ha="left",
+                    alpha=alpha, zorder=5)
+            if not node.states:
+                continue
+            bar_x0, bar_x1 = x0 + 0.92, x0 + CARD_W - 0.46
+            bar_colour = colour if _luminance(colour) < 0.85 else INK_3
+            for k, (state, p) in enumerate(zip(node.states, node.probs, strict=False)):
+                yk = box.top + HEAD_H + 0.07 + (k + 0.5) * STATE_H - 0.02
+                ax.text(x0 + 0.09, yk, _clip(state, 15), fontsize=6.3, color=INK_2,
+                        va="center", ha="left", alpha=alpha, zorder=5)
+                ax.add_patch(Rectangle((bar_x0, yk - 0.042), bar_x1 - bar_x0, 0.084,
+                                       facecolor=GRID, edgecolor="none", alpha=alpha,
+                                       zorder=4))
+                if p is not None and np.isfinite(p):
+                    ax.add_patch(Rectangle((bar_x0, yk - 0.042),
+                                           (bar_x1 - bar_x0) * min(max(p, 0.0), 1.0), 0.084,
+                                           facecolor=bar_colour, edgecolor="none",
+                                           alpha=alpha, zorder=4.1))
+                    ax.text(x0 + CARD_W - 0.08, yk, f"{p:.0%}" if p >= 0.01 or p == 0
+                            else "<1%", fontsize=6.3, color=INK, va="center", ha="right",
+                            alpha=alpha, zorder=5)
 
         if legend:
-            _draw_network_legend(ax, left, tallest + 0.28, arcs, top, label_below)
+            _draw_network_legend(ax, left, bottom + 0.45, arcs, top, label_below,
+                                 target_colour=next((b.layer.colour for b in boxes.values()
+                                                     if b.node.is_target), INK))
 
     return fig
 
 
 def _draw_network_legend(ax: Any, x0: float, y0: float,
                          arcs: Sequence[FigArc], top_strength: float,
-                         label_below: float | None) -> None:
-    """Key for arc colour, width and style, below the network."""
-    from matplotlib.patches import Rectangle
+                         label_below: float | None, *, target_colour: str = INK) -> None:
+    """One quiet row under the network: stability, information, dashes, target."""
+    from matplotlib.patches import FancyBboxPatch, Rectangle
 
     has_freq = any(a.frequency is not None for a in arcs)
     has_strength = top_strength > 0
+    size, colour = 7.2, INK_2
     x = x0
     if has_freq:
-        ax.text(x, y0, "Arc colour: share of bootstrap resamples containing the arc",
-                fontsize=7.5, color=INK_2, va="center")
-        note = ("The percentage on each arc is the same share." if label_below is None
-                else f"Percentages are written on arcs below {label_below:.0%}.")
-        ax.text(x, y0 + 0.66, note, fontsize=7, color=INK_3, va="center")
+        ax.text(x, y0, "Stability: share of bootstrap resamples with the arc",
+                fontsize=size, color=colour, va="center")
         steps = 40
         for i in range(steps):
-            ax.add_patch(Rectangle((x + i * 0.05, y0 + 0.13), 0.05, 0.13,
-                                   facecolor=arc_colour(i / (steps - 1)),
-                                   edgecolor="none"))
+            ax.add_patch(Rectangle((x + i * 0.045, y0 + 0.14), 0.045, 0.07,
+                                   facecolor=arc_colour(i / (steps - 1)), edgecolor="none"))
         for share in (0, 0.5, 1.0):
-            ax.text(x + share * 2.0, y0 + 0.40, f"{round(share * 100)}%", fontsize=7,
-                    color=INK_2, ha="center", va="center")
-        x += 3.7
+            ax.text(x + share * 1.8, y0 + 0.34, f"{round(share * 100)}%", fontsize=6.6,
+                    color=INK_3, ha="center", va="center")
+        x += 3.4
     if has_strength:
-        ax.text(x, y0, f"Arc width: mutual information (largest {top_strength:.2f} bits)",
-                fontsize=7.5, color=INK_2, va="center")
+        ax.text(x, y0, f"Width: mutual information (up to {top_strength:.2f} bits)",
+                fontsize=size, color=colour, va="center")
         for i, share in enumerate((0.1, 0.4, 1.0)):
-            lw = 0.9 + 3.1 * math.sqrt(share)
-            ax.plot([x + i * 0.75, x + i * 0.75 + 0.55], [y0 + 0.27] * 2, color=INK,
-                    lw=lw, solid_capstyle="butt")
-        x += 3.7
+            lw = 0.6 + 1.9 * math.sqrt(share)
+            ax.plot([x + i * 0.6, x + i * 0.6 + 0.42], [y0 + 0.18] * 2,
+                    color=arc_colour(1.0), lw=lw, solid_capstyle="round")
+        x += 3.2
     if has_freq:
-        ax.text(x, y0, "Dashed arc: in fewer than half of the resamples",
-                fontsize=7.5, color=INK_2, va="center")
-        ax.plot([x, x + 0.7], [y0 + 0.27] * 2, color=INK, lw=1.6,
-                linestyle=(0, (4.5, 2.5)))
-        x += 3.7
-    ax.text(x, y0, "Heavy outline: target variable", fontsize=7.5, color=INK_2,
+        ax.text(x, y0, "Dashed: in fewer than half", fontsize=size, color=colour,
+                va="center")
+        ax.plot([x, x + 0.6], [y0 + 0.18] * 2, color=arc_colour(0.4), lw=1.2,
+                linestyle=(0, (3.2, 2.2)))
+        x += 2.2
+    ax.text(x, y0, "Solid title: target variable", fontsize=size, color=colour,
             va="center")
-    ax.add_patch(Rectangle((x, y0 + 0.17), 0.45, 0.2, facecolor="none",
-                           edgecolor=INK, linewidth=2.4))
+    ax.add_patch(FancyBboxPatch((x, y0 + 0.11), 0.5, 0.15,
+                                boxstyle="round,pad=0,rounding_size=0.03",
+                                facecolor=target_colour, edgecolor="none"))
+    if has_freq and label_below is not None:
+        ax.text(x0, y0 + 0.56, f"Percentages are written on arcs below {label_below:.0%}.",
+                fontsize=6.6, color=INK_3, va="center")
 
 
 # ---------------------------------------------------------------------------
@@ -660,10 +730,10 @@ def plot_stability(table: pd.DataFrame, *, top: int = 30, title: str | None = No
 
 
 RELATION_COLOURS = {
-    "parent": SERIES[0],
-    "child": SERIES[1],
-    "co-parent": SERIES[2],
-    "other": "#b4bcc5",
+    "parent": "#2166ac",
+    "child": "#b2182b",
+    "co-parent": "#92c5de",
+    "other": "#cfd5dc",
 }
 RELATION_NOTES = {
     "parent": "parent of the target",
@@ -931,6 +1001,28 @@ def layers_for(design: Any, columns: Sequence[str] | None = None,
     return result
 
 
+def network_marginals(study: Any, network: str | None = None
+                      ) -> dict[str, tuple[tuple[str, ...], tuple[float, ...]]]:
+    """`{column: (readable states, probabilities)}` in the fitted network.
+
+    The marginal distribution implied by the network, by exact inference
+    without evidence: what each card of the network figure shows.
+    """
+    import pyagrum as gum
+
+    name = study.project.network(network).name
+    bn = study.network(name)
+    engine = gum.LazyPropagation(bn)
+    engine.makeInference()
+    result = {}
+    for column in bn.names():
+        labels = list(bn.variable(column).labels())
+        pretty = study._states(name, column)
+        result[column] = (tuple(pretty.get(s, s) for s in labels),
+                          tuple(float(v) for v in engine.posterior(column).toarray()))
+    return result
+
+
 def network_figure(study: Any, network: str | None = None, *, stability: bool = True,
                    highlight: Sequence[str] = (), layout: str = "auto",
                    title: str | None = None) -> Any:
@@ -943,8 +1035,11 @@ def network_figure(study: Any, network: str | None = None, *, stability: bool = 
     columns = list(definition.columns)
     layers = layers_for(study.design, columns, definition.layer_map)
     targets = set(study.project.default_targets(definition))
+    marginals = network_marginals(study, definition.name)
     layers = [FigLayer(layer.name, layer.title, layer.time, layer.colour, tuple(
-        FigNode(n.column, n.label, n.short, n.column in targets) for n in layer.nodes))
+        FigNode(n.column, n.label, n.short, n.column in targets,
+                *marginals.get(n.column, ((), ())))
+        for n in layer.nodes))
         for layer in layers]
 
     strengths = study.arc_strengths(definition.name)
@@ -969,5 +1064,5 @@ def design_figure(project: Any, *, layout: str = "auto") -> Any:
     return plot_network(
         layers, [], title=f"{project.name}: layers and variables",
         subtitle=(f"{n} variables in {len(layers)} layers. Arcs may only run from a layer "
-                  "to itself or to a layer further right, or lower in the same column."),
+                  "to itself or to a layer further down."),
         layout=layout, legend=False)

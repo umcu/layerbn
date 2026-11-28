@@ -44,14 +44,48 @@ DEFAULT_COLUMN_PATTERN = "{variable}_{time}"
 
 KINDS = ("continuous", "categorical")
 
-# The categorical palette used for layers, in fixed order. Checked against a
-# white background for lightness, chroma and colour-vision-deficiency
-# separation of neighbouring colours. Layers are always named directly in
-# the figures, so identity does not rely on colour alone.
-LAYER_COLOURS = (
-    "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-    "#e87ba4", "#008300", "#6250d6", "#e34948",
+# Layers take colours along ColorBrewer RdBu in causal order: blue for the
+# first layer, red for the last, so the colour says where a layer sits in the
+# order. The pale middle of the palette is skipped, because a layer's colour
+# must stand out against white; with an odd number of layers the middle one is
+# a neutral grey, which is the palette's own midpoint. Layers are always named
+# directly in the figures, so identity does not rely on colour alone.
+RDBU_BLUE_TO_RED = (
+    "#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
 )
+MIDDLE_GREY = "#8e99a6"
+LAYER_COLOURS = ("#2166ac", "#b2182b")      # one layer, two layers
+
+
+def _rdbu(position: float) -> str:
+    """The colour at `position` (0 = dark blue, 1 = dark red), interpolated."""
+    scaled = min(max(position, 0.0), 1.0) * (len(RDBU_BLUE_TO_RED) - 1)
+    i = min(int(scaled), len(RDBU_BLUE_TO_RED) - 2)
+    share = scaled - i
+    a, b = RDBU_BLUE_TO_RED[i], RDBU_BLUE_TO_RED[i + 1]
+    rgb = [round(int(a[k:k + 2], 16) * (1 - share) + int(b[k:k + 2], 16) * share)
+           for k in (1, 3, 5)]
+    return "#" + "".join(f"{c:02x}" for c in rgb)
+
+
+def layer_colours(n: int) -> list[str]:
+    """`n` colours along RdBu, blue first and red last, skipping the pale middle."""
+    if n <= 0:
+        return []
+    if n == 1:
+        return [LAYER_COLOURS[0]]
+    colours = []
+    for i in range(n):
+        t = i / (n - 1)
+        if abs(t - 0.5) < 1e-9:
+            colours.append(MIDDLE_GREY)
+        elif t < 0.5:
+            colours.append(_rdbu(0.10 + 0.26 * (t / 0.5)))
+        else:
+            colours.append(_rdbu(0.64 + 0.26 * ((t - 0.5) / 0.5)))
+    return colours
+
 
 _NOTE_COLUMNS = re.compile(r"^(note|notes|comment|comments|remark|remarks|#.*)$")
 
@@ -532,16 +566,8 @@ def _parse_variables(frame: pd.DataFrame, source: str,
 # building the design
 # ---------------------------------------------------------------------------
 
-def _colour_for(index: int) -> str:
-    colour = LAYER_COLOURS[index % len(LAYER_COLOURS)]
-    if index < len(LAYER_COLOURS):
-        return colour
-    # More layers than palette slots: reuse the hue, lightened, so that two
-    # layers never share exactly the same colour. Layers are labelled in the
-    # figures, so identity does not depend on the colour alone.
-    rgb = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
-    mixed = [round(c + (255 - c) * 0.45) for c in rgb]
-    return "#" + "".join(f"{c:02x}" for c in mixed)
+def _colour_for(index: int, n: int) -> str:
+    return layer_colours(n)[index]
 
 
 def _check_colour(text: str, where: str) -> str:
@@ -549,7 +575,7 @@ def _check_colour(text: str, where: str) -> str:
     if not is_color_like(text):
         raise DesignError(
             f"{where}: {text!r} is not a colour. Use a name such as 'steelblue' "
-            "or a hex code such as '#2a78d6'.")
+            "or a hex code such as '#2166ac'.")
     return to_hex(text)
 
 
@@ -655,7 +681,7 @@ def build_design(
         colour_text = layer_def.colour
         colour = (_check_colour(colour_text, f"{source}, sheet 'layers', "
                                 f"layer {layer_def.key!r}, column 'colour'")
-                  if colour_text else _colour_for(base_index[layer_def.key]))
+                  if colour_text else _colour_for(base_index[layer_def.key], len(base_index)))
         expanded_layers.append(Layer(
             name=name, key=layer_def.key, title=title,
             time=t.label if t else None,

@@ -9,8 +9,9 @@ writes, next to this file:
     mark.svg / mark.png            the symbol alone, square
 
 The symbol is the method in miniature: variables in ordered layers, with arcs
-that only run forward. The layer colours are the ones the figures use, so the
-logo and the output look like one product. Text is converted to outlines in the
+that only run forward. The layers take colours along ColorBrewer RdBu, blue
+first and red last, exactly as in the figures, so the logo and the output look
+like one product. Text is converted to outlines in the
 SVG, so it displays the same on every computer.
 """
 from __future__ import annotations
@@ -21,21 +22,21 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
+from matplotlib.patches import PathPatch  # noqa: E402
 from matplotlib.path import Path as MPath  # noqa: E402
 
 HERE = Path(__file__).parent
 
 THEMES = {
     "light": {
-        "ink": "#1f2328", "ink2": "#57606a", "arc": "#9aa3ad", "arc_strong": "#3b4652",
-        "layers": ["#2a78d6", "#1baf7a", "#eda100", "#e87ba4"],
-        "band_alpha": 0.13, "node_edge": "#ffffff",
+        "ink": "#1f2328", "ink2": "#57606a", "arc": "#b9c2cc", "arc_strong": "#4a5868",
+        "layers": ["#2166ac", "#7db8d7", "#ec9374", "#b2182b"],
+        "accent": "#2166ac", "node_edge": "#ffffff",
     },
     "dark": {
-        "ink": "#f0efec", "ink2": "#b4bcc5", "arc": "#6b7682", "arc_strong": "#c3cbd4",
-        "layers": ["#3987e5", "#199e70", "#c98500", "#d55181"],
-        "band_alpha": 0.20, "node_edge": "#0d1117",
+        "ink": "#eef1f4", "ink2": "#a9b3be", "arc": "#4a5563", "arc_strong": "#aab5c1",
+        "layers": ["#4393c3", "#92c5de", "#f4a582", "#d6604d"],
+        "accent": "#92c5de", "node_edge": "#0d1117",
     },
 }
 
@@ -55,7 +56,6 @@ ARCS = [
     (1, 0, 2, 0, True), (1, 1, 2, 0, False), (1, 1, 2, 1, True), (1, 2, 2, 1, False),
     (2, 0, 3, 0, True), (2, 1, 3, 0, True),
 ]
-BAND_W, BAND_H = 62, 276
 
 
 def _pick_font() -> str:
@@ -65,30 +65,23 @@ def _pick_font() -> str:
 
 
 def draw_mark(ax, theme: dict, *, dx: float = 0.0, dy: float = 0.0) -> None:
-    """The symbol, with its left edge at `dx`."""
-    for column, colour in zip(COLUMNS_X, theme["layers"], strict=True):
-        ax.add_patch(FancyBboxPatch(
-            (column - BAND_W / 2 + dx, 150 - BAND_H / 2 + dy), BAND_W, BAND_H,
-            boxstyle="round,pad=0,rounding_size=22", facecolor=colour,
-            alpha=theme["band_alpha"], edgecolor="none", zorder=0))
-
+    """The symbol, with its left edge at `dx`: coloured nodes and thin arcs."""
     for c0, n0, c1, n1, strong in ARCS:
         (x0, y0), (x1, y1) = NODES[c0][n0], NODES[c1][n1]
-        x0, x1, y0, y1 = x0 + dx + 11, x1 + dx - 12, y0 + dy, y1 + dy
-        reach = (x1 - x0) * 0.45
+        x0, x1, y0, y1 = x0 + dx, x1 + dx, y0 + dy, y1 + dy
+        reach = (x1 - x0) * 0.5
         path = MPath([(x0, y0), (x0 + reach, y0), (x1 - reach, y1), (x1, y1)],
                      [MPath.MOVETO, MPath.CURVE4, MPath.CURVE4, MPath.CURVE4])
-        ax.add_patch(FancyArrowPatch(
-            path=path, arrowstyle="-|>", mutation_scale=9 if strong else 7,
-            linewidth=2.6 if strong else 1.5, shrinkA=0, shrinkB=0, zorder=2,
-            color=theme["arc_strong"] if strong else theme["arc"], capstyle="round"))
+        ax.add_patch(PathPatch(
+            path, facecolor="none", linewidth=3.0 if strong else 1.8, zorder=2,
+            edgecolor=theme["arc_strong"] if strong else theme["arc"], capstyle="round"))
 
     for column, nodes, colour in zip(COLUMNS_X, NODES, theme["layers"], strict=True):
         for x, y in nodes:
             last = column == COLUMNS_X[-1]
-            radius = 17 if last else 12
+            radius = 19 if last else 13
             ax.add_patch(plt.Circle((x + dx, y + dy), radius, facecolor=colour,
-                                    edgecolor=theme["node_edge"], linewidth=2.2, zorder=3))
+                                    edgecolor=theme["node_edge"], linewidth=3.0, zorder=3))
 
 
 def build(name: str, theme: dict, *, mark_only: bool = False) -> None:
@@ -117,7 +110,7 @@ def build(name: str, theme: dict, *, mark_only: bool = False) -> None:
         box = word.get_window_extent(fig.canvas.get_renderer())
         x_bn = x0 + box.width / fig.dpi * 100        # pixels to logo units (10 in = 1000)
         ax.text(x_bn, y0, "bn", fontsize=size, fontweight="bold",
-                color=theme["layers"][0], ha="left", va="center")
+                color=theme["accent"], ha="left", va="center")
         ax.text(x0 + 4, 212, "Layered Bayesian networks for cohort studies", fontsize=17,
                 fontweight="normal", color=theme["ink2"], ha="left", va="center")
 

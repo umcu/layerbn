@@ -4,27 +4,35 @@
 ![The network figure](../assets/example-network.png)
 </figure>
 
-Read it **from left to right**, and from top to bottom inside a column. No arc points the
-other way.
+Read it **from the top down**: the first layer is the top row, the outcome the bottom row. No
+arc points upwards.
 
 | Mark | Means |
 | --- | --- |
-| Coloured band | A layer, with its name. Layers are in causal order. |
-| Heavy outline | A target variable. |
+| Row | A layer, named in the left margin. Rows are in causal order. |
+| Layer **colour** | The layer's place in the order, along the RdBu palette: blue for the first layer, red for the last. |
+| **Card** | A variable: its name, and its distribution in the fitted network as one bar per state, with the probability. |
+| **Solid** title strip | A target. |
 | Arc **width** | Mutual information between the two variables, in bits, in the fitted network. Square-root scale. The legend gives the largest. |
-| Arc **colour**, darker | The arc is found in a larger share of the bootstrap resamples. |
-| **Percentage** on an arc | That share, as a number. Each label sits on its own arc and is outlined in the arc's colour. |
+| Arc **darkness** | Darker: found in a larger share of the bootstrap resamples. |
+| **Percentage** beside an arc | That share, as a number. Each sits on its own arc, clear of the variables and of the other percentages. |
 | **Dashed** arc | Found in fewer than half of the resamples. |
 
-Arcs that skip a layer are routed through the gaps between boxes, so an arc never hides
-behind a variable, and arcs at one box are spread along its side.
+Arcs that skip a layer are routed through the gaps between cards, so an arc never hides behind
+one. Arcs inside a layer arch above its row. The arcs at one edge of a card are spread along it.
 
-## Width and colour answer different questions
+!!! note "The bars are the model's distribution"
+
+    Each card shows the marginal distribution implied by the fitted network, not the counts in
+    the data. For a variable with parents the two can differ slightly, because the probability
+    tables are estimated with a prior. The bins figure in the report shows the data themselves.
+
+## Width and darkness answer different questions
 
 <div class="lb-isnot" markdown>
 <div markdown>
 
-#### Wide and pale
+#### Wide and light
 
 Much information in the fitted network, but **not stable**: another sample could have given
 a different structure.
