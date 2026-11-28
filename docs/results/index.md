@@ -46,7 +46,7 @@ against the layer order**.
 
 -   [**The network figure**](network-figure.md)
 
-    Bands, arcs, widths, colours and percentages.
+    Layers, arcs, widths and percentages.
 
 -   [**Arc stability**](stability.md)
 

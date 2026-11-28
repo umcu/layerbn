@@ -24,9 +24,11 @@ a short settings file; no code needed.
   <img src="docs/assets/example-network.png" alt="Example network: background, exposures and baseline measures, and an outcome at follow-up" width="100%">
 </p>
 
-<sub>Example output on simulated data. Layers are the coloured bands, in causal order. Arc
-width is the mutual information between two variables; arc colour and the percentage on each
-arc give the share of bootstrap resamples that contain it.</sub>
+<sub>Example output on simulated data. Each row is a layer, from the top down in causal order,
+coloured from blue (first) to red (last). Each variable shows its distribution in the fitted
+network; the target has a solid title. Arc width is the mutual information between two
+variables; arc darkness and the percentage give the share of bootstrap resamples that contain
+the arc.</sub>
 
 ## Quick start
 

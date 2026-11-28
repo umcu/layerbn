@@ -70,7 +70,7 @@ reading order, each with a short note on how to read it:
 
 <figure markdown>
 ![The network of the example](../assets/example-network.png)
-<figcaption>The network of the example. Each band is a layer and every arc runs left to right.
+<figcaption>The network of the example. Each row is a layer and every arc runs downwards.
 The percentage on an arc is how often it was found across 100 bootstrap resamples.</figcaption>
 </figure>
 

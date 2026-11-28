@@ -23,7 +23,7 @@ The workbook has three sheets. Most studies only need the first two.
     | `label` | Optional. The name shown in figures, if it differs. |
     | `repeated` | `no`, unless the same variables were measured at several time points. See [Measurements over time](repeated.md). |
     | `arcs_within` | `no` to forbid arcs between variables of this layer. Empty: allowed. |
-    | `colour` | Optional. A name such as `steelblue` or a code such as `#2a78d6`. |
+    | `colour` | Optional. A name such as `steelblue` or a code such as `#2166ac`. |
 
 === "variables"
 

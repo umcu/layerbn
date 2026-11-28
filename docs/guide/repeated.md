@@ -59,11 +59,11 @@ The repeated layer is expanded into one layer per time point, in time order:
 ```mermaid
 flowchart LR
     B["Background"] --> S0["Scores<br/>(First visit)"] --> S1["Scores<br/>(Second visit)"] --> S2["Scores<br/>(Third visit)"] --> O["Outcome"]
-    style B fill:#eaf2fb,stroke:#2a78d6,color:#1f2328
-    style S0 fill:#e8f7f1,stroke:#1baf7a,color:#1f2328
-    style S1 fill:#e8f7f1,stroke:#1baf7a,color:#1f2328
-    style S2 fill:#e8f7f1,stroke:#1baf7a,color:#1f2328
-    style O fill:#fdf6e6,stroke:#eda100,color:#1f2328
+    style B fill:#e4eef7,stroke:#2166ac,color:#1f2328
+    style S0 fill:#eef0f3,stroke:#8e99a6,color:#1f2328
+    style S1 fill:#eef0f3,stroke:#8e99a6,color:#1f2328
+    style S2 fill:#eef0f3,stroke:#8e99a6,color:#1f2328
+    style O fill:#f6e3e5,stroke:#b2182b,color:#1f2328
 ```
 
 If several layers are repeated, they must follow each other on the `layers` sheet. They are

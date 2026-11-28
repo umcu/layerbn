@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from layerbn.runner import RunResult
 
 CSS = """
-:root { --ink:#1f2328; --ink2:#57606a; --ink3:#8c959f; --line:#e6e8eb; --tint:#f6f8fa; --accent:#2a78d6; }
+:root { --ink:#1f2328; --ink2:#57606a; --ink3:#8c959f; --line:#e6e8eb; --tint:#f6f8fa; --accent:#2166ac; }
 * { box-sizing: border-box; }
 body { margin:0; background:#fff; color:var(--ink); line-height:1.55;
   font:15px/1.55 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
@@ -36,7 +36,7 @@ p { margin:8px 0; max-width:78ch; }
 .meta { color:var(--ink2); font-size:13px; }
 .how { background:var(--tint); border-left:3px solid var(--accent); padding:8px 14px;
   color:var(--ink2); font-size:13.5px; margin:10px 0 16px; max-width:90ch; }
-.warn { background:#fff8e6; border-left:3px solid #eda100; padding:8px 14px; font-size:13.5px;
+.warn { background:#fdf1ec; border-left:3px solid #b2182b; padding:8px 14px; font-size:13.5px;
   margin:10px 0; max-width:90ch; }
 .facts { display:flex; flex-wrap:wrap; gap:12px; margin:18px 0 6px; }
 .fact { border:1px solid var(--line); border-radius:8px; padding:10px 16px; min-width:140px; }
@@ -260,8 +260,9 @@ def render_report(study: Analysis, run: RunResult) -> str:
     out.append(_how(
         "Variables are grouped in layers. The order of the layers is the assumed order "
         "of influence. Arcs may only run from a layer to itself or to a later layer. "
-        "Read the figure from left to right and, inside a column, from top to bottom. "
-        "A heavy outline marks a target variable."))
+        "Read the figure from the top down: the first layer is the top row. "
+        "A layer's colour shows its place in the order, from blue (first) to red (last). "
+        "A target variable has a solid title strip."))
     out.append(_image(run.figures["design"], "Layers and variables", wide=True))
     out.append("<details><summary>Variable table</summary>"
                + _table(d.table(), scroll=True) + "</details>")
@@ -282,9 +283,9 @@ def render_report(study: Analysis, run: RunResult) -> str:
         if result.description:
             out.append(f"<p>{_e(result.description)}</p>")
         out.append(_how(
-            "<b>Arc colour and the percentage</b> show how often the arc appears when the "
+            "<b>Arc darkness and the percentage</b> show how often the arc appears when the "
             "network is learned again on resampled data (arc stability). <b>Arc width</b> is "
-            "the mutual information between the two variables. A wide, pale arc is "
+            "the mutual information between the two variables. A wide, light arc is "
             "informative but unstable. A dashed arc occurred in fewer than half of the "
             "resamples. There is no fixed threshold for a stable arc: report the "
             "frequency."))

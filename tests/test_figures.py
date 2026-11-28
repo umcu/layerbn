@@ -56,16 +56,25 @@ def test_layers_are_grouped_by_time_point_in_the_grid_layout(write_tables):
     assert figures.design_figure is not None
 
 
-def test_an_arc_that_skips_a_column_is_routed_around_the_boxes():
-    layers = [FigLayer(name, name, None, "#2a78d6", tuple(
+def test_an_arc_that_skips_a_row_is_routed_around_the_cards():
+    layers = [FigLayer(name, name, None, "#2166ac", tuple(
         FigNode(f"{name}{i}", f"{name} {i}", f"{name} {i}") for i in range(3)))
         for name in ("A", "B", "C")]
     fig = figures.plot_network(layers, [FigArc("A1", "C1", 0.3, 0.8)], legend=False)
     patch = next(p for p in fig.axes[0].patches if type(p).__name__ == "FancyArrowPatch")
-    # The middle box of column B is exactly on the straight line from A1 to C1,
+    # The middle card of row B is exactly on the straight line from A1 to C1,
     # so the route must leave that line to pass it.
-    ys = patch.get_path().vertices[:, 1]
-    assert ys.max() - ys.min() > figures.NODE_H / 2
+    xs = patch.get_path().vertices[:, 0]
+    assert xs.max() - xs.min() > figures.CARD_W / 2
+
+
+def test_each_card_shows_the_distribution_of_its_variable(study):
+    marginals = figures.network_marginals(study, "all_variables")
+    states, probs = marginals["SEX"]
+    assert states == ("Female", "Male") and abs(sum(probs) - 1) < 1e-9
+    fig = figures.network_figure(study, "all_variables")
+    texts = {t.get_text() for t in fig.axes[0].texts}
+    assert {"Female", "Male", f"{probs[0]:.0%}"} <= texts
 
 
 def test_every_arc_gets_its_percentage_by_default():
@@ -77,9 +86,9 @@ def test_every_arc_gets_its_percentage_by_default():
 
 def _toy():
     layers = [
-        FigLayer("A", "A", None, "#2a78d6", (FigNode("a1", "A one", "A one"),
+        FigLayer("A", "A", None, "#2166ac", (FigNode("a1", "A one", "A one"),
                                               FigNode("a2", "A two", "A two"))),
-        FigLayer("B", "B", None, "#eb6834", (FigNode("b1", "B one", "B one", True),)),
+        FigLayer("B", "B", None, "#b2182b", (FigNode("b1", "B one", "B one", True),)),
     ]
     arcs = [FigArc("a1", "b1", 0.4, 0.9), FigArc("a2", "b1", 0.1, 0.3),
             FigArc("a1", "ghost", 0.1, 0.5)]            # an unknown variable is skipped
@@ -94,17 +103,17 @@ def test_the_layout_can_be_forced_and_unknown_arcs_are_skipped():
 
 def test_the_figure_scales_with_the_number_of_layers():
     layers, arcs = _toy()
-    small = figures.plot_network(layers[:1], [], legend=False).get_size_inches()[0]
-    large = figures.plot_network(layers, arcs).get_size_inches()[0]
+    small = figures.plot_network(layers[:1], [], legend=False).get_size_inches()[1]
+    large = figures.plot_network(layers, arcs).get_size_inches()[1]
     assert large > small
 
 
-def test_a_layer_with_many_variables_is_split_into_columns():
+def test_a_layer_with_many_variables_is_split_into_rows():
     nodes = tuple(FigNode(f"v{i}", f"Item {i}", f"Item {i}") for i in range(23))
-    layers = [FigLayer("Items", "Items", None, "#2a78d6", nodes),
-              FigLayer("Out", "Out", None, "#eb6834", (FigNode("o", "Outcome", "Outcome"),))]
+    layers = [FigLayer("Items", "Items", None, "#2166ac", nodes),
+              FigLayer("Out", "Out", None, "#b2182b", (FigNode("o", "Outcome", "Outcome"),))]
     fig = figures.plot_network(layers, [FigArc("v0", "o", None, None)])
-    assert fig.get_size_inches()[1] < 12, "23 items should not make one very tall column"
+    assert fig.get_size_inches()[0] < 18, "23 items should not make one very wide row"
 
 
 def test_arc_colour_runs_from_light_to_dark():

@@ -26,12 +26,12 @@ flowchart LR
     M1 --> O
     AGE --> O
     O -. "never" .-> AGE
-    linkStyle 4 stroke:#d64545,stroke-dasharray:4
-    style L1 fill:#eaf2fb,stroke:#2a78d6
-    style L2 fill:#fdf0eb,stroke:#eb6834
-    style L3 fill:#e8f7f1,stroke:#1baf7a
-    style L4 fill:#fdf6e6,stroke:#eda100
-    classDef node fill:#ffffff,stroke:#8c959f,color:#1f2328
+    linkStyle 4 stroke:#b2182b,stroke-dasharray:4
+    style L1 fill:#e4eef7,stroke:#2166ac
+    style L2 fill:#eef6fa,stroke:#7db8d7
+    style L3 fill:#fcefe9,stroke:#ec9374
+    style L4 fill:#f6e3e5,stroke:#b2182b
+    classDef node fill:#ffffff,stroke:#c4cbd3,color:#1f2328
     class AGE,SEX,EA,M1,O node
 ```
 

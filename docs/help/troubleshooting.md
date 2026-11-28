@@ -61,7 +61,7 @@ of bins, and a categorical variable is not binned at all.
 
 ### `'x' is not a colour`
 
-Use a colour name such as `steelblue` or a hex code such as `#2a78d6` in the `colour` column.
+Use a colour name such as `steelblue` or a hex code such as `#2166ac` in the `colour` column.
 
 ### `the label 'X' appears more than once after the time points are expanded`
 

@@ -97,8 +97,8 @@ all brought together in one self-contained report.</p>
 
 -   ![Network](assets/example-network.png)
 
-    **The network.** Layers as bands, arc width for information, arc colour and label for
-    stability. [Read it →](results/network-figure.md)
+    **The network.** Layers as rows from the top down, each variable with its
+    distribution, and arcs labelled with their stability. [Read it →](results/network-figure.md)
 
 -   ![Arc stability](assets/example-stability.png)
 
