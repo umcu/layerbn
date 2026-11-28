@@ -132,13 +132,14 @@ all brought together in one self-contained report.</p>
 ## Try it on simulated data
 
 ```bash
-pip install "layerbn @ git+https://github.com/umcu/layerbn@v3.0.0"
-layerbn init my-study          # a project with a worked example
-layerbn run my-study --fast    # about 20 seconds
+python -m pip install "https://github.com/umcu/layerbn/archive/refs/heads/main.zip"
+layerbn init my-study          # a project folder with a worked example
+cd my-study
+layerbn run --fast             # about 20 seconds
 ```
 
-Then open `my-study/results/report.html`, or try the
-[interactive explorer](guide/explorer.md) right here in the documentation.
+Then open `results/report.html` in your browser. Never used a terminal? The
+[Start here](start/index.md) pages explain every step, for Windows and macOS.
 
 </div>
 

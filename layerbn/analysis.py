@@ -124,8 +124,28 @@ def read_table(path: str | Path) -> pd.DataFrame:
     if reader is None:
         raise ValueError(f"cannot read {path.suffix!r} files. "
                          f"Supported: {sorted(_READERS)}")
-    kwargs = {"sep": "\t"} if path.suffix.lower() == ".tsv" else {}
+    kwargs: dict[str, Any] = {}
+    if path.suffix.lower() == ".tsv":
+        kwargs = {"sep": "\t"}
+    elif path.suffix.lower() == ".csv":
+        kwargs = _csv_format(path)
     return getattr(pd, reader)(path, **kwargs)
+
+
+def _csv_format(path: Path) -> dict[str, Any]:
+    """Separator and decimal mark of a CSV file, read from its header line.
+
+    Excel in many countries (the Netherlands, Germany, France, ...) saves CSV
+    with semicolons between the columns and a comma as the decimal mark. Read
+    such a file with commas and every row becomes one long column.
+    """
+    with open(path, encoding="utf-8-sig", errors="replace") as handle:
+        header = handle.readline()
+    counts = {sep: header.count(sep) for sep in (",", ";", "\t")}
+    sep = max(counts, key=counts.get) if any(counts.values()) else ","
+    if sep == ";":
+        return {"sep": ";", "decimal": ","}
+    return {"sep": sep}
 
 
 # ---------------------------------------------------------------------------

@@ -33,10 +33,11 @@ def test_init_does_not_overwrite_without_force(fresh, capsys):
     assert "settings_version" in (fresh / "settings.yml").read_text()
 
 
-def test_a_blank_project_has_empty_tables_and_no_data(tmp_path, capsys):
+def test_a_blank_project_has_empty_tables_and_an_empty_data_folder(tmp_path, capsys):
     folder = tmp_path / "blank"
     assert main(["init", str(folder), "--blank"]) == 0
-    assert not (folder / "data").exists()
+    assert (folder / "data").is_dir() and not any((folder / "data").iterdir())
+    assert "cd " in capsys.readouterr().out
     assert main(["check", str(folder)]) == 1
     assert "no variables found" in capsys.readouterr().err
 

@@ -61,6 +61,22 @@ def test_a_text_column_cannot_be_forced_to_continuous(make_project, write_tables
         Analysis(p, demo_df, verbose=False)
 
 
+def test_a_csv_saved_by_excel_with_semicolons_is_read(tmp_path):
+    from layerbn.analysis import read_table
+    path = tmp_path / "data.csv"
+    path.write_text("AGE;SCORE;GROUP\n63,5;12,25;A\n70,1;9,5;B\n", encoding="utf-8")
+    frame = read_table(path)
+    assert list(frame.columns) == ["AGE", "SCORE", "GROUP"]
+    assert frame["AGE"].tolist() == [63.5, 70.1]
+
+
+def test_an_ordinary_csv_is_read(tmp_path):
+    from layerbn.analysis import read_table
+    path = tmp_path / "data.csv"
+    path.write_text("AGE,GROUP\n63.5,A\n70.1,B\n", encoding="utf-8")
+    assert read_table(path)["AGE"].tolist() == [63.5, 70.1]
+
+
 # -- tables ------------------------------------------------------------------------------
 
 def test_the_bins_are_described_in_readable_terms(study):
