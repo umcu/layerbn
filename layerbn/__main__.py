@@ -38,6 +38,9 @@ def _settings_file(path: Path | None) -> Path:
 # init
 # ---------------------------------------------------------------------------
 
+DOCS_URL = "https://umcu.github.io/layerbn/"
+
+
 def _init(folder: Path, *, blank: bool, notebook: bool, force: bool) -> int:
     from layerbn.demo import make_demo_cohort
     from layerbn.workbook import write_design_workbook
@@ -55,36 +58,47 @@ def _init(folder: Path, *, blank: bool, notebook: bool, force: bool) -> int:
     write_design_workbook(folder / "variables.xlsx", demo=not blank)
     created = ["settings.yml", "variables.xlsx"]
 
+    (folder / "data").mkdir(exist_ok=True)
     if not blank:
-        (folder / "data").mkdir(exist_ok=True)
         make_demo_cohort(n=800, seed=0).to_csv(folder / "data" / "demo_cohort.csv",
                                                index=False)
-        created.append("data/demo_cohort.csv")
     if notebook:
         shutil.copyfile(TEMPLATE_DIR / "analysis.ipynb", folder / "analysis.ipynb")
         created.append("analysis.ipynb")
     if not (folder / ".gitignore").exists():
         (folder / ".gitignore").write_text(_GITIGNORE, encoding="utf-8")
 
-    print(f"Created in {folder}:")
-    for name in created:
-        print(f"  {name}")
+    where = str(folder)
+    if " " in where:
+        where = f'"{where}"'
     if blank:
-        print(
-            "\nNext:\n"
-            "  1. Open variables.xlsx and list your variables and layers.\n"
-            "     The 'instructions' sheet explains each column.\n"
-            "  2. Open settings.yml and set `data: file:` to your data file.\n"
-            f"  3. layerbn check {folder}\n"
-            f"  4. layerbn run {folder} --fast        (a quick trial run)\n"
-            f"  5. layerbn run {folder}               (the run to report)")
+        print(f"Created an empty project in {folder}:\n"
+              "  settings.yml      how to analyse (open it in a text editor)\n"
+              "  variables.xlsx    your variables and their layers (open it in Excel)\n"
+              "  data/             put your data file here\n"
+              + ("  analysis.ipynb    an optional notebook\n" if notebook else "")
+              + "\nNext:\n"
+              "  1. Copy your data file into the data folder.\n"
+              "  2. In settings.yml, set `data: file:` to it, e.g. data/my_cohort.csv.\n"
+              "  3. In variables.xlsx, fill in the sheets 'layers' and 'variables'.\n"
+              "     The sheet 'instructions' explains every column.\n"
+              f"  4. cd {where}\n"
+              "     layerbn check --figure    checks everything and draws your layers\n"
+              "     layerbn run --fast        a quick trial run\n"
+              "     layerbn run               the run you report\n"
+              f"\nStep-by-step guide: {DOCS_URL}guide/")
     else:
-        print(
-            "\nThe project contains a simulated example. Try it:\n"
-            f"  layerbn run {folder} --fast\n"
-            "then open results/report.html. To use your own data, edit variables.xlsx\n"
-            "(delete the example rows first) and `data: file:` in settings.yml, or start\n"
-            f"from an empty project with `layerbn init {folder} --blank`.")
+        print(f"Created a worked example in {folder}:\n"
+              "  settings.yml          how to analyse (open it in a text editor)\n"
+              "  variables.xlsx        the variables and their layers (open it in Excel)\n"
+              "  data/demo_cohort.csv  simulated data for 800 participants\n"
+              + ("  analysis.ipynb        an optional notebook\n" if notebook else "")
+              + "\nTry it:\n"
+              f"  cd {where}\n"
+              "  layerbn run --fast            about 20 seconds\n"
+              "Then open results/report.html in your browser.\n"
+              f"\nTo use your own data: {DOCS_URL}guide/\n"
+              f"or start from empty tables: layerbn init <folder> --blank")
     return 0
 
 

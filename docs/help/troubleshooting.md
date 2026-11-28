@@ -167,6 +167,18 @@ match exactly. The usual causes, most common first:
   of the `timepoints` sheet, and `data: column_pattern:`.
 * The variable is not in this data file.
 
+### A variable has a strange extra category, or a bin that starts at -99
+
+Your data use a code such as `-99` or `999` for missing values. layerbn reads it as a real
+value. Make those cells empty in your data, then impute them or set
+`data: missing: drop_rows`.
+
+### Every variable is "not a column of the data file", and the data seem to have one column
+
+The file is a CSV with an unusual separator. Commas, semicolons (with decimal commas, as
+Excel writes them with Dutch or German settings) and tabs are recognised from the first line.
+Check that the first line of the file holds the column names, separated by one of these.
+
 ### `The data has missing values in N variable(s)`
 
 The network is learned from complete data. Impute the values before the analysis, or set
@@ -283,10 +295,27 @@ the font.
 
 ## Installation and speed
 
-### `layerbn: command not found`
+### `layerbn: command not found` or `not recognized`
 
-Use `python -m layerbn` instead of `layerbn`. Or the folder where pip puts commands is not on
-your PATH; the `python -m` form avoids that.
+Use `python -m layerbn` instead of `layerbn` (on a Mac `python3 -m layerbn`). The folder where
+pip puts commands is not on your PATH; the `python -m` form avoids that.
+
+### `error: externally-managed-environment` when installing
+
+Your Python does not allow installing packages into it directly (common with Homebrew Python
+on a Mac, and on Linux). Install layerbn in a private environment, as described under
+[Install](../start/install.md#3-check-that-it-works).
+
+### `python: command not found` or the Microsoft Store opens
+
+Python is not installed, or not on your PATH. Install it from
+[python.org](https://www.python.org/downloads/); on Windows tick "Add python.exe to PATH".
+On a Mac, type `python3` instead of `python`.
+
+### `No such file or directory` after `cd`
+
+The folder name is misspelt, or it contains spaces and is not in quotes. Type `cd ` and drag
+the folder into the terminal window; see [Terminal basics](../start/terminal.md).
 
 ### `ModuleNotFoundError: No module named 'pyarrow'` (or `openpyxl`, `pyreadstat`)
 

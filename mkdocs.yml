@@ -111,6 +111,7 @@ nav:
   - Home: index.md
   - Start here:
       - start/index.md
+      - Terminal basics: start/terminal.md
       - Install: start/install.md
       - Your first run: start/first-run.md
   - Your own study:
